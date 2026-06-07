@@ -189,7 +189,7 @@ class OmegaConfig:
 class _ConfigSources:
     def __init__(self) -> None:
         self.config_file = user_config_path()
-        self.config_exists = self.config_file.exists()
+        self.config_exists = self.config_file.exists() and not _ignore_user_config_for_tests()
         self.config = load_config(self.config_file) if self.config_exists else {}
         self.legacy_env_path = Path(".env")
         # Runtime entrypoints call load_dotenv() for temporary legacy support.
@@ -222,6 +222,10 @@ class _ConfigSources:
 
     def source_for(self, json_path: str) -> str:
         return self._source_by_path.get(json_path, "config.json" if self.config_exists else "defaults")
+
+
+def _ignore_user_config_for_tests() -> bool:
+    return bool(os.getenv("PYTEST_CURRENT_TEST")) and not os.getenv("OMEGA_CONFIG_PATH")
 
 
 def _stringify_source_value(value: Any) -> str:

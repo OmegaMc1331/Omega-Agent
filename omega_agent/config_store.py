@@ -183,7 +183,7 @@ def load_config(path: Path | None = None) -> dict[str, Any]:
     data = default_config()
     if target.exists():
         try:
-            loaded = json.loads(target.read_text(encoding="utf-8"))
+            loaded = json.loads(target.read_text(encoding="utf-8-sig"))
         except json.JSONDecodeError as exc:
             raise ValueError(f"Configuration JSON invalide: {target}") from exc
         if not isinstance(loaded, dict):

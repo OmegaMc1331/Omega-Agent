@@ -34,6 +34,9 @@ def test_installer_config_defaults_are_present():
     for needle in expected:
         assert needle in content
     assert "Configuration .env" not in content
+    assert "WriteAllText($configPath" in content
+    assert "UTF8Encoding]::new($false)" in content
+    assert "Set-Content -LiteralPath $configPath" not in content
 
 
 def test_installer_recommended_repo_and_paths_are_present():

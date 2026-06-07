@@ -160,7 +160,8 @@ function Configure-OmegaConfig([string]$Root, [string]$Workspace, [bool]$OpenBro
             db_path = (Join-Path $omegaHome "omega.db")
         }
     }
-    $config | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $configPath -Encoding UTF8
+    $json = $config | ConvertTo-Json -Depth 12
+    [System.IO.File]::WriteAllText($configPath, $json + [Environment]::NewLine, [System.Text.UTF8Encoding]::new($false))
 }
 
 Write-Host ""

@@ -9,12 +9,16 @@ from fastapi.testclient import TestClient
 from omega_agent.config import OmegaConfig
 from omega_agent.config_store import (
     config_path,
+    default_config,
     ensure_default_config,
     get_config_value,
+    load_config,
     migrate_env_to_config,
     redact_config_for_display,
+    save_config,
     set_config_value,
 )
+from omega_agent.doctor import run_doctor
 from omega_agent.gateway.server import create_app
 from omega_agent.main import models_command
 
@@ -28,6 +32,50 @@ def test_config_json_created_if_absent(tmp_path: Path, monkeypatch):
     assert path == target.resolve()
     assert target.exists()
     assert json.loads(target.read_text(encoding="utf-8"))["model"]["default"] == "codex/gpt-5.5"
+
+
+def test_load_config_accepts_utf8_bom(tmp_path: Path):
+    target = tmp_path / "config.json"
+    target.write_bytes(b"\xef\xbb\xbf" + json.dumps({"model": {"default": "codex/gpt-5.5"}}).encode("utf-8"))
+
+    loaded = load_config(target)
+
+    assert loaded["model"]["default"] == "codex/gpt-5.5"
+
+
+def test_save_config_writes_utf8_without_bom(tmp_path: Path):
+    target = tmp_path / "config.json"
+
+    save_config(default_config(), target)
+
+    assert not target.read_bytes().startswith(b"\xef\xbb\xbf")
+    assert json.loads(target.read_text(encoding="utf-8"))["version"] == 1
+
+
+def test_config_init_creates_json_readable_without_bom(tmp_path: Path, monkeypatch):
+    target = tmp_path / ".omega" / "config.json"
+    monkeypatch.setenv("OMEGA_CONFIG_PATH", str(target))
+
+    ensure_default_config()
+
+    assert not target.read_bytes().startswith(b"\xef\xbb\xbf")
+    assert load_config()["app"]["name"] == "Omega Agent"
+
+
+def test_doctor_does_not_crash_with_bom_config(tmp_path: Path, monkeypatch):
+    target = tmp_path / "config.json"
+    workspace = tmp_path / "workspace"
+    config = default_config()
+    config["workspace"]["path"] = str(workspace)
+    config["paths"]["db_path"] = str(tmp_path / "omega.db")
+    target.write_bytes(b"\xef\xbb\xbf" + json.dumps(config).encode("utf-8"))
+    monkeypatch.setenv("OMEGA_CONFIG_PATH", str(target))
+    monkeypatch.setattr("omega_agent.doctor.codex_version", lambda: "codex")
+    monkeypatch.setattr("omega_agent.doctor.codex_login_status", lambda: (True, "logged in"))
+
+    checks = run_doctor(OmegaConfig.from_env())
+
+    assert any(check.name == "Config status" and check.ok for check in checks)
 
 
 def test_config_path_uses_user_config_path(tmp_path: Path, monkeypatch):
