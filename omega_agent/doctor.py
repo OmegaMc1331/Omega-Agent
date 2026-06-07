@@ -28,6 +28,9 @@ def run_doctor(config: OmegaConfig) -> list[DoctorCheck]:
     checks: list[DoctorCheck] = []
 
     checks.append(DoctorCheck("Python", sys.version_info >= (3, 11), f"{platform.python_version()} ({sys.executable})"))
+    checks.append(DoctorCheck("Config path", bool(config.config_path), str(config.config_path or "")))
+    checks.append(DoctorCheck("Config status", config.config_status == "OK", config.config_status))
+    checks.append(DoctorCheck("Legacy .env", True, "present" if config.legacy_env_present else "absent"))
 
     version = codex_version()
     checks.append(DoctorCheck("Codex CLI", version is not None, version or "introuvable"))
@@ -41,6 +44,7 @@ def run_doctor(config: OmegaConfig) -> list[DoctorCheck]:
     checks.append(_database_check(config))
 
     checks.append(DoctorCheck("Default model", bool(config.default_model_ref), config.default_model_ref))
+    checks.append(DoctorCheck("Model config source", True, config.model_config_source))
     checks.append(DoctorCheck("Model selector", config.model_selection_enabled, "enabled" if config.model_selection_enabled else "disabled"))
     checks.extend(_model_provider_checks(config))
     checks.append(DoctorCheck("Safe mode", config.safe_mode, "active" if config.safe_mode else "desactive"))

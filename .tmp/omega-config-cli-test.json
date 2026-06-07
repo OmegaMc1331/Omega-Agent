@@ -1,0 +1,128 @@
+{
+  "version": 1,
+  "app": {
+    "name": "Omega Agent",
+    "language": "fr",
+    "open_browser": true,
+    "ui_theme": "dark"
+  },
+  "gateway": {
+    "host": "127.0.0.1",
+    "port": 8765
+  },
+  "workspace": {
+    "path": "D:\\Omega-Agent\\.tmp\\omega_workspace_cli",
+    "full_access": true,
+    "require_approval": false,
+    "require_approval_outside_workspace": true,
+    "shell_full_access": true,
+    "allow_delete": true,
+    "allow_git_write": true
+  },
+  "model": {
+    "selection_enabled": true,
+    "default": "codex/gpt-5.5",
+    "fallback": null,
+    "auth_cache_seconds": 300,
+    "status_cache_seconds": 60
+  },
+  "providers": {
+    "codex": {
+      "enabled": true,
+      "auth": {
+        "type": "codex_oauth"
+      },
+      "models": [
+        "gpt-5.5"
+      ]
+    },
+    "openai_api": {
+      "enabled": false,
+      "auth": {
+        "type": "secret_ref",
+        "secret": "OPENAI_API_KEY"
+      },
+      "base_url": null,
+      "models": []
+    },
+    "openrouter": {
+      "enabled": false,
+      "auth": {
+        "type": "secret_ref",
+        "secret": "OPENROUTER_API_KEY"
+      },
+      "base_url": "https://openrouter.ai/api/v1",
+      "models": []
+    },
+    "ollama": {
+      "enabled": false,
+      "auth": {
+        "type": "none"
+      },
+      "base_url": "http://127.0.0.1:11434",
+      "models": []
+    },
+    "anthropic": {
+      "enabled": false,
+      "auth": {
+        "type": "secret_ref",
+        "secret": "ANTHROPIC_API_KEY"
+      },
+      "models": []
+    },
+    "gemini": {
+      "enabled": false,
+      "auth": {
+        "type": "secret_ref",
+        "secret": "GEMINI_API_KEY"
+      },
+      "models": []
+    },
+    "custom_openai_compatible": {
+      "enabled": false,
+      "auth": {
+        "type": "secret_ref",
+        "secret": "CUSTOM_OPENAI_API_KEY"
+      },
+      "base_url": null,
+      "models": []
+    }
+  },
+  "channels": {
+    "enabled": true,
+    "webhooks_enabled": true,
+    "telegram": {
+      "enabled": false,
+      "token_secret": "OMEGA_TELEGRAM_BOT_TOKEN"
+    },
+    "discord": {
+      "enabled": false,
+      "token_secret": "OMEGA_DISCORD_BOT_TOKEN"
+    }
+  },
+  "scheduler": {
+    "enabled": false,
+    "tick_seconds": 30
+  },
+  "reasoning": {
+    "stream": true,
+    "detail": "minimal"
+  },
+  "performance": {
+    "fast_mode": true,
+    "streaming": true,
+    "status_cache_seconds": 60,
+    "max_history_messages": 20,
+    "max_memory_results": 5,
+    "max_skills_in_context": 5,
+    "max_tool_descriptions": 20,
+    "load_plugins_on_startup": true,
+    "reload_plugins_per_message": false,
+    "reload_skills_per_message": false
+  },
+  "paths": {
+    "skills_dir": "~/omega_skills",
+    "plugins_dir": "~/omega_plugins",
+    "db_path": "D:\\Omega-Agent\\.tmp\\omega_cli.db"
+  }
+}

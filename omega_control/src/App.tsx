@@ -78,6 +78,10 @@ type Status = {
   provider: string;
   model: string;
   workspace: string;
+  config_path?: string;
+  config_status?: string;
+  legacy_env_present?: boolean;
+  model_config_source?: string;
   safe_mode: boolean;
   workspace_full_access?: boolean;
   require_approval_outside_workspace?: boolean;
@@ -1938,6 +1942,7 @@ function SettingsView({ status, settingsData, performanceTraces, reloadRegistrie
   const allowShell = Boolean(settingsData.shell_full_access_in_workspace ?? status?.shell_full_access_in_workspace);
   const requireInsideApproval = Boolean(settingsData.require_approvals ?? true);
   const sections: Array<[string, Array<[string, React.ReactNode, React.ElementType]>]> = [
+    ['Configuration', [['Config path', settingsData.config_path || status?.config_path || '~/.omega/config.json', FileText], ['Config status', settingsData.config_status || status?.config_status || 'unknown', CheckCircle2], ['Legacy .env', String(settingsData.legacy_env_present ?? status?.legacy_env_present ?? false), AlertTriangle], ['Model source', settingsData.model_config_source || status?.model_config_source || 'config.json', Database]]],
     ['Général', [['Workspace', settingsData.workspace || status?.workspace || '...', HardDrive], ['Theme', settingsData.theme || status?.gateway.theme || 'dark', Settings]]],
     ['Modèle', [['Provider', settingsData.provider || status?.provider || 'codex', Cpu], ['Model', settingsData.model || status?.model || 'gpt-5.5', Zap]]],
     ['Gateway', [['Endpoint', `${settingsData.host || status?.gateway.host}:${settingsData.port || status?.gateway.port}`, Activity], ['Open browser', String(settingsData.open_browser ?? status?.gateway.open_browser), Gauge]]],

@@ -17,23 +17,23 @@ def test_windows_installer_scripts_exist():
         assert (ROOT / relative).exists(), relative
 
 
-def test_installer_env_defaults_are_present():
+def test_installer_config_defaults_are_present():
     content = (ROOT / "install.ps1").read_text(encoding="utf-8")
     expected = [
-        'OMEGA_PROVIDER = "codex"',
-        'OMEGA_MODEL = "gpt-5.5"',
-        'OMEGA_DEFAULT_MODEL = "codex/gpt-5.5"',
-        "OMEGA_WORKSPACE = $Workspace",
-        'OMEGA_WORKSPACE_FULL_ACCESS = "true"',
-        'OMEGA_REQUIRE_APPROVAL = "false"',
-        'OMEGA_REQUIRE_APPROVAL_OUTSIDE_WORKSPACE = "true"',
-        'OMEGA_SHELL_FULL_ACCESS_IN_WORKSPACE = "true"',
-        'OMEGA_ALLOW_DELETE_IN_WORKSPACE = "true"',
-        'OMEGA_ALLOW_GIT_WRITE_IN_WORKSPACE = "true"',
-        'OMEGA_REASONING_DETAIL = "minimal"',
+        'default = "codex/gpt-5.5"',
+        "path = $Workspace",
+        "full_access = $true",
+        "require_approval = $false",
+        "require_approval_outside_workspace = $true",
+        "shell_full_access = $true",
+        "allow_delete = $true",
+        "allow_git_write = $true",
+        'detail = "minimal"',
+        '"config.json"',
     ]
     for needle in expected:
         assert needle in content
+    assert "Configuration .env" not in content
 
 
 def test_installer_recommended_repo_and_paths_are_present():

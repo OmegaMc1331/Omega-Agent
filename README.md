@@ -38,7 +38,7 @@ iwr https://raw.githubusercontent.com/OmegaMc1331/Omega-Agent/main/uninstall.ps1
 powershell -ExecutionPolicy Bypass -File .\uninstall-omega.ps1
 ```
 
-L'installateur installe Omega Agent dans `%LOCALAPPDATA%\OmegaAgent`, cree le workspace dans `~/omega_workspace`, prepare `.venv`, construit Omega Control si `npm` est disponible, configure `.env`, installe la commande globale `omega`, puis lance `omega doctor`. Les secrets ne sont jamais demandes ni affiches. Omega a Full Access uniquement dans son workspace; les acces hors workspace restent bloques.
+L'installateur installe Omega Agent dans `%LOCALAPPDATA%\OmegaAgent`, cree le workspace dans `~/omega_workspace`, prepare `.venv`, construit Omega Control si `npm` est disponible, cree `$HOME\.omega\config.json`, installe la commande globale `omega`, puis lance `omega config doctor` et `omega doctor`. Les secrets ne sont jamais demandes ni affiches. Omega a Full Access uniquement dans son workspace; les acces hors workspace restent bloques.
 
 ### Installation developpeur locale
 
@@ -48,7 +48,7 @@ python -m venv .venv
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned
 .\.venv\Scripts\Activate.ps1
 pip install -e . pytest httpx
-Copy-Item .env.example .env
+omega config init
 ```
 
 Frontend :
@@ -76,89 +76,53 @@ omega doctor
 
 ## Configuration
 
-```env
-OMEGA_PROVIDER=codex
-OMEGA_MODEL=gpt-5.5
-OMEGA_DEFAULT_MODEL=codex/gpt-5.5
-OMEGA_FALLBACK_MODEL=
-OMEGA_MODEL_SELECTION_ENABLED=true
-OMEGA_MODEL_AUTH_CACHE_SECONDS=300
-OMEGA_MODEL_STATUS_CACHE_SECONDS=60
-OMEGA_WORKSPACE=~/omega_workspace
-OMEGA_WORKSPACE_FULL_ACCESS=true
-OMEGA_REQUIRE_APPROVAL=false
-OMEGA_REQUIRE_APPROVAL_OUTSIDE_WORKSPACE=true
-OMEGA_SHELL_FULL_ACCESS_IN_WORKSPACE=true
-OMEGA_ALLOW_DELETE_IN_WORKSPACE=true
-OMEGA_ALLOW_GIT_WRITE_IN_WORKSPACE=true
-OMEGA_HOST=127.0.0.1
-OMEGA_PORT=8765
-OMEGA_OPEN_BROWSER=true
-OMEGA_UI_THEME=dark
-OMEGA_SKILLS_DIR=~/omega_skills
-OMEGA_PLUGINS_DIR=~/omega_plugins
-OMEGA_DB_PATH=~/.omega/omega.db
-OMEGA_SAFE_MODE=true
-OMEGA_CHANNELS_ENABLED=true
-OMEGA_WEBHOOKS_ENABLED=true
-OMEGA_TELEGRAM_ENABLED=false
-OMEGA_DISCORD_ENABLED=false
-OMEGA_TELEGRAM_BOT_TOKEN=
-OMEGA_DISCORD_BOT_TOKEN=
-OMEGA_SCHEDULER_ENABLED=false
-OMEGA_SCHEDULER_TICK_SECONDS=30
-OMEGA_BROWSER_ENABLED=false
-OMEGA_BROWSER_HEADLESS=false
-OMEGA_BROWSER_PROFILE_DIR=~/omega_workspace/.omega/browser-profile
-OMEGA_BROWSER_REQUIRE_APPROVAL=true
-OMEGA_DESKTOP_ENABLED=false
-OMEGA_DESKTOP_REQUIRE_APPROVAL=true
-OMEGA_DESKTOP_SCREENSHOTS_DIR=~/omega_workspace/.omega/screenshots
-OMEGA_REASONING_STREAM=true
-OMEGA_REASONING_DETAIL=minimal
-OMEGA_FAST_MODE=true
-OMEGA_STREAMING=true
-OMEGA_PERF_LOGGING=true
-OMEGA_STATUS_CACHE_SECONDS=60
-OMEGA_CODEX_AUTH_CACHE_SECONDS=300
-OMEGA_MAX_HISTORY_MESSAGES=20
-OMEGA_MAX_MEMORY_RESULTS=5
-OMEGA_MAX_SKILLS_IN_CONTEXT=5
-OMEGA_MAX_TOOL_DESCRIPTIONS=20
-OMEGA_LOAD_PLUGINS_ON_STARTUP=true
-OMEGA_RELOAD_PLUGINS_PER_MESSAGE=false
-OMEGA_RELOAD_SKILLS_PER_MESSAGE=false
-OMEGA_CODEX_MODE=exec
+Omega Agent utilise maintenant `$HOME\.omega\config.json` comme source de verite. `.env` reste supporte temporairement comme fallback legacy, mais il n'est plus necessaire.
 
-OPENAI_API_KEY=
-OPENAI_BASE_URL=
+Commandes utiles :
 
-OPENROUTER_API_KEY=
-OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
-
-OLLAMA_BASE_URL=http://127.0.0.1:11434
-
-ANTHROPIC_API_KEY=
-GEMINI_API_KEY=
-GOOGLE_API_KEY=
-
-CUSTOM_OPENAI_BASE_URL=
-CUSTOM_OPENAI_API_KEY=
-CUSTOM_OPENAI_MODEL=
+```powershell
+omega config path
+omega config init
+omega config show
+omega config get model.default
+omega config set model.default codex/gpt-5.5
+omega config set gateway.port 8765
+omega config set workspace.full_access true
+omega config migrate-env
+omega config doctor
 ```
 
-`OPENAI_API_KEY` n'est pas requis quand `OMEGA_PROVIDER=codex`.
+Modeles et providers :
+
+```powershell
+omega models current
+omega models set-default codex/gpt-5.5
+omega models set-fallback codex/gpt-5.5
+omega models enable-provider ollama
+omega models set-provider-base-url ollama http://127.0.0.1:11434
+omega models providers
+omega models status
+```
+
+Les cles API ne sont pas stockees en clair dans `config.json`. Pour v0.1, configure les secrets dans les variables d'environnement utilisateur Windows :
+
+```powershell
+omega secrets set-env OPENROUTER_API_KEY <value>
+omega secrets status
+```
+
+Rouvre PowerShell apres `omega secrets set-env`. `OPENAI_API_KEY` n'est pas requis quand le provider par defaut est Codex OAuth.
 
 ### Workspace Full Access
 
-`OMEGA_WORKSPACE_FULL_ACCESS=true` autorise Omega Agent a lire, creer, modifier, supprimer et executer des commandes dans `OMEGA_WORKSPACE` sans demander une approval pour chaque action workspace-safe. Les chemins hors workspace restent refuses directement, meme si `OMEGA_REQUIRE_APPROVAL=false`.
+`workspace.full_access=true` autorise Omega Agent a lire, creer, modifier, supprimer et executer des commandes dans le workspace configure sans demander une approval pour chaque action workspace-safe. Les chemins hors workspace restent refuses directement, meme si `workspace.require_approval=false`.
 
-Garde `OMEGA_WORKSPACE` sur un dossier projet dedie. Omega refuse HOME complet, les racines disque, les chemins sensibles, les secrets, les cles SSH, les cookies navigateur et les commandes systeme dangereuses. Les suppressions et les commandes shell dans le workspace restent controlables via :
+Garde `workspace.path` sur un dossier projet dedie. Omega refuse HOME complet, les racines disque, les chemins sensibles, les secrets, les cles SSH, les cookies navigateur et les commandes systeme dangereuses. Les suppressions et les commandes shell dans le workspace restent controlables via :
 
-```env
-OMEGA_SHELL_FULL_ACCESS_IN_WORKSPACE=true
-OMEGA_ALLOW_DELETE_IN_WORKSPACE=true
-OMEGA_ALLOW_GIT_WRITE_IN_WORKSPACE=true
+```powershell
+omega config set workspace.shell_full_access true
+omega config set workspace.allow_delete true
+omega config set workspace.allow_git_write true
 ```
 
 ## Commandes

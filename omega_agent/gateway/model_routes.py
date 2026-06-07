@@ -3,6 +3,8 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from omega_agent.config import OmegaConfig
+from omega_agent.config_store import save_config, set_config_value
 from omega_agent.runtime.model_selector import VALID_SCOPES
 
 
@@ -135,5 +137,10 @@ def _set_provider_enabled(request: Request, provider_id: str, enabled: bool):
 
     with connect_runtime_db(state.config) as conn:
         conn.execute("UPDATE model_providers SET enabled = ?, updated_at = ? WHERE id = ?", (int(enabled), _now(), provider_id))
+    if state.config.config_path is not None:
+        data = set_config_value(f"providers.{provider_id}.enabled", enabled, file_path=state.config.config_path)
+        save_config(data, state.config.config_path)
+        state.config = OmegaConfig.from_env()
+        state.model_selector = type(state.model_selector)(state.config)
     state.events.add("model.provider.enabled" if enabled else "model.provider.disabled", {"provider_id": provider_id})
     return {"ok": True, "provider_id": provider_id, "enabled": enabled}

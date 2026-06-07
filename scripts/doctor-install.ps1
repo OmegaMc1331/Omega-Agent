@@ -20,13 +20,15 @@ Write-Host "Ω Omega Agent install doctor" -ForegroundColor Magenta
 
 $omegaExe = Join-Path $InstallDir ".venv\Scripts\omega.exe"
 $venv = Join-Path $InstallDir ".venv"
-$envFile = Join-Path $InstallDir ".env"
+$configFile = Join-Path (Join-Path $HOME ".omega") "config.json"
+$legacyEnvFile = Join-Path $InstallDir ".env"
 $uiIndex = Join-Path $InstallDir "omega_control\dist\index.html"
 
 if (Test-Path -LiteralPath $InstallDir) { Ok "InstallDir" $InstallDir } else { Err "InstallDir missing" $InstallDir }
 if (Test-Path -LiteralPath $venv) { Ok ".venv" $venv } else { Err ".venv missing" $venv }
 if (Test-Path -LiteralPath $omegaExe) { Ok "omega.exe" $omegaExe } else { Err "omega.exe missing" $omegaExe }
-if (Test-Path -LiteralPath $envFile) { Ok ".env" $envFile } else { Err ".env missing" $envFile }
+if (Test-Path -LiteralPath $configFile) { Ok "config.json" $configFile } else { Err "config.json missing" $configFile }
+if (Test-Path -LiteralPath $legacyEnvFile) { Warn ".env legacy" "present: $legacyEnvFile" } else { Ok ".env legacy" "absent" }
 if (Test-Path -LiteralPath $WorkspaceDir) { Ok "Workspace" $WorkspaceDir } else { Err "Workspace missing" $WorkspaceDir }
 if (Test-ProfileOmega $omegaExe) { Ok "PowerShell profile" "omega function installed" } else { Warn "PowerShell profile" "omega function not installed or profile not reloaded" }
 

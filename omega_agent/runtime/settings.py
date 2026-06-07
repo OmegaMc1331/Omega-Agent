@@ -36,6 +36,10 @@ PUBLIC_SETTINGS = {
     "default_model_ref",
     "fallback_model_ref",
     "model_selection_enabled",
+    "config_path",
+    "config_status",
+    "legacy_env_present",
+    "model_config_source",
 }
 PATCHABLE_SETTINGS = {
     "provider",
@@ -95,6 +99,10 @@ class SettingsStore:
             "default_model_ref": self.config.default_model_ref,
             "fallback_model_ref": self.config.fallback_model_ref,
             "model_selection_enabled": self.config.model_selection_enabled,
+            "config_path": str(self.config.config_path),
+            "config_status": self.config.config_status,
+            "legacy_env_present": self.config.legacy_env_present,
+            "model_config_source": self.config.model_config_source,
         }
         defaults.update(stored)
         return redact(defaults)

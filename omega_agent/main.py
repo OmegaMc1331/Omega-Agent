@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import argparse
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -10,7 +11,19 @@ from pathlib import Path
 from dotenv import load_dotenv
 from rich.console import Console
 
-from .config import OmegaConfig
+from .config import OmegaConfig, VALID_PROVIDERS
+from .config_store import (
+    config_path,
+    ensure_default_config,
+    expected_secret_status,
+    get_config_value,
+    migrate_env_to_config,
+    parse_cli_value,
+    redact_config_for_display,
+    save_config,
+    set_config_value,
+    unset_config_value,
+)
 from .doctor import run_doctor
 from .runtime import OmegaRuntime
 from .runtime.jobs import JobsStore
@@ -26,8 +39,16 @@ from .tools.memory import _recall
 console = Console()
 
 
-async def chat_loop() -> None:
+def _load_legacy_dotenv_if_needed() -> None:
+    if config_path().exists():
+        return
+    if os.getenv("PYTEST_CURRENT_TEST"):
+        return
     load_dotenv()
+
+
+async def chat_loop() -> None:
+    _load_legacy_dotenv_if_needed()
     config = OmegaConfig.from_env()
     try:
         runtime = OmegaRuntime(config)
@@ -73,7 +94,7 @@ async def chat_loop() -> None:
 
 
 def doctor_command() -> int:
-    load_dotenv()
+    _load_legacy_dotenv_if_needed()
     try:
         config = OmegaConfig.from_env()
     except Exception as exc:
@@ -122,6 +143,17 @@ def run() -> None:
     models_subparsers.add_parser("current")
     models_subparsers.add_parser("refresh")
     models_subparsers.add_parser("auth-status")
+    models_set_default = models_subparsers.add_parser("set-default")
+    models_set_default.add_argument("model_ref")
+    models_set_fallback = models_subparsers.add_parser("set-fallback")
+    models_set_fallback.add_argument("model_ref")
+    models_enable_provider = models_subparsers.add_parser("enable-provider")
+    models_enable_provider.add_argument("provider")
+    models_disable_provider = models_subparsers.add_parser("disable-provider")
+    models_disable_provider.add_argument("provider")
+    models_base_url = models_subparsers.add_parser("set-provider-base-url")
+    models_base_url.add_argument("provider")
+    models_base_url.add_argument("url")
     models_set = models_subparsers.add_parser("set")
     models_set.add_argument("model_ref")
     models_test = models_subparsers.add_parser("test")
@@ -135,7 +167,30 @@ def run() -> None:
     memory_search.add_argument("query", nargs="?", default="")
     config_parser = subparsers.add_parser("config")
     config_subparsers = config_parser.add_subparsers(dest="config_command")
+    config_subparsers.add_parser("path")
+    config_init = config_subparsers.add_parser("init")
+    config_init.add_argument("--force", action="store_true")
     config_subparsers.add_parser("show")
+    config_show_raw = config_subparsers.add_parser("show-raw")
+    config_show_raw.add_argument("--raw", action="store_true")
+    config_show = config_subparsers.choices["show"]
+    config_show.add_argument("--raw", action="store_true")
+    config_get = config_subparsers.add_parser("get")
+    config_get.add_argument("path")
+    config_set = config_subparsers.add_parser("set")
+    config_set.add_argument("path")
+    config_set.add_argument("value")
+    config_unset = config_subparsers.add_parser("unset")
+    config_unset.add_argument("path")
+    config_migrate = config_subparsers.add_parser("migrate-env")
+    config_migrate.add_argument("--force", action="store_true")
+    config_subparsers.add_parser("doctor")
+    secrets_parser = subparsers.add_parser("secrets")
+    secrets_subparsers = secrets_parser.add_subparsers(dest="secrets_command")
+    secrets_subparsers.add_parser("status")
+    secrets_set_env = secrets_subparsers.add_parser("set-env")
+    secrets_set_env.add_argument("name")
+    secrets_set_env.add_argument("value")
     security_parser = subparsers.add_parser("security")
     security_subparsers = security_parser.add_subparsers(dest="security_command")
     security_audit = security_subparsers.add_parser("audit")
@@ -164,10 +219,12 @@ def run() -> None:
         raise SystemExit(memory_command(args))
     if args.command == "config":
         raise SystemExit(config_command(args))
+    if args.command == "secrets":
+        raise SystemExit(secrets_command(args))
     if args.command == "security":
         raise SystemExit(security_command(args))
     if args.command in {None, "serve"}:
-        load_dotenv()
+        _load_legacy_dotenv_if_needed()
         config = OmegaConfig.from_env()
         host = getattr(args, "host", None) or config.host
         port = getattr(args, "port", None) or config.port
@@ -200,7 +257,7 @@ def ui_dev_command() -> int:
 
 
 def skills_command(args: argparse.Namespace) -> int:
-    load_dotenv()
+    _load_legacy_dotenv_if_needed()
     config = OmegaConfig.from_env()
     registry = SkillsRegistry(config)
     if args.skills_command == "list":
@@ -216,7 +273,7 @@ def skills_command(args: argparse.Namespace) -> int:
 
 
 def plugins_command(args: argparse.Namespace) -> int:
-    load_dotenv()
+    _load_legacy_dotenv_if_needed()
     config = OmegaConfig.from_env()
     if args.plugins_command == "list":
         for plugin in PluginsRegistry(config).list():
@@ -237,7 +294,7 @@ def tools_command(args: argparse.Namespace) -> int:
 
 
 def models_command(args: argparse.Namespace) -> int:
-    load_dotenv()
+    _load_legacy_dotenv_if_needed()
     config = OmegaConfig.from_env()
     selector = ModelSelector(config)
     if args.models_command == "list":
@@ -263,6 +320,26 @@ def models_command(args: argparse.Namespace) -> int:
         preference = selector.set_preference("global", args.model_ref)
         console.print(f"Modèle global: {preference.primary_model_ref}")
         return 0
+    if args.models_command == "set-default":
+        preference = selector.set_preference("global", args.model_ref)
+        console.print(f"Default model: {preference.primary_model_ref}")
+        return 0
+    if args.models_command == "set-fallback":
+        preference = selector.set_preference("global", config.default_model_ref, fallback_model_ref=args.model_ref)
+        console.print(f"Fallback model: {preference.fallback_model_ref}")
+        return 0
+    if args.models_command == "enable-provider":
+        _set_provider_config_enabled(args.provider, True)
+        console.print(f"Provider active: {args.provider}")
+        return 0
+    if args.models_command == "disable-provider":
+        _set_provider_config_enabled(args.provider, False)
+        console.print(f"Provider desactive: {args.provider}")
+        return 0
+    if args.models_command == "set-provider-base-url":
+        _set_provider_base_url(args.provider, args.url)
+        console.print(f"Base URL {args.provider}: {args.url}")
+        return 0
     if args.models_command == "test":
         provider_id = args.model_ref.split("/", 1)[0]
         provider = selector.provider(provider_id)
@@ -281,7 +358,7 @@ def models_command(args: argparse.Namespace) -> int:
 
 
 def jobs_command(args: argparse.Namespace) -> int:
-    load_dotenv()
+    _load_legacy_dotenv_if_needed()
     config = OmegaConfig.from_env()
     if args.jobs_command == "list":
         for job in JobsStore(config).list():
@@ -292,7 +369,7 @@ def jobs_command(args: argparse.Namespace) -> int:
 
 
 def memory_command(args: argparse.Namespace) -> int:
-    load_dotenv()
+    _load_legacy_dotenv_if_needed()
     config = OmegaConfig.from_env()
     if args.memory_command == "search":
         for memory in MemoryStore(config).search(args.query):
@@ -303,19 +380,110 @@ def memory_command(args: argparse.Namespace) -> int:
 
 
 def config_command(args: argparse.Namespace) -> int:
-    load_dotenv()
-    config = OmegaConfig.from_env()
-    if args.config_command == "show":
-        settings = SettingsStore(config).get_all()
-        for key, value in settings.items():
-            console.print(f"{key}: {value}")
+    _load_legacy_dotenv_if_needed()
+    if args.config_command == "path":
+        console.print(str(config_path()))
         return 0
-    console.print("Commandes: omega config show")
+    if args.config_command == "init":
+        target = config_path()
+        if target.exists() and not args.force:
+            console.print(f"Config deja presente: {target}")
+            return 0
+        ensure_default_config(target)
+        console.print(f"Config creee: {target}")
+        return 0
+    if args.config_command == "show":
+        console.print(json.dumps(redact_config_for_display(), ensure_ascii=False, indent=2))
+        return 0
+    if args.config_command == "show-raw":
+        console.print(json.dumps(redact_config_for_display(), ensure_ascii=False, indent=2))
+        return 0
+    if args.config_command == "get":
+        value = get_config_value(args.path)
+        console.print(json.dumps(value, ensure_ascii=False) if isinstance(value, (dict, list)) else str(value))
+        return 0
+    if args.config_command == "set":
+        set_config_value(args.path, parse_cli_value(args.value))
+        console.print(f"{args.path} = {args.value}")
+        return 0
+    if args.config_command == "unset":
+        unset_config_value(args.path)
+        console.print(f"{args.path} supprime")
+        return 0
+    if args.config_command == "migrate-env":
+        result = migrate_env_to_config(force=args.force)
+        console.print(json.dumps(result, ensure_ascii=False, indent=2))
+        if result.get("legacy_env_present"):
+            console.print(".env est legacy. La nouvelle source de verite est config.json.")
+        return 0
+    if args.config_command == "doctor":
+        config = OmegaConfig.from_env()
+        failed = False
+        checks = [
+            ("Config path", bool(config.config_path), str(config.config_path)),
+            ("Config status", config.config_status == "OK", config.config_status),
+            ("Default model", bool(config.default_model_ref), config.default_model_ref),
+            ("Provider actif", config.provider in VALID_PROVIDERS, config.provider),
+            ("Workspace", config.workspace.exists(), str(config.workspace)),
+        ]
+        for name, ok, detail in checks:
+            console.print(f"{'OK' if ok else 'FAIL'} {name}: {detail}")
+            failed = failed or not ok
+        return 1 if failed else 0
+    console.print("Commandes: omega config path|init|show|get <path>|set <path> <value>|unset <path>|migrate-env|doctor")
     return 2
 
 
+def secrets_command(args: argparse.Namespace) -> int:
+    if args.secrets_command == "status":
+        for item in expected_secret_status():
+            console.print(f"{item['name']}: configured={str(item['configured']).lower()}")
+        return 0
+    if args.secrets_command == "set-env":
+        _set_user_environment_variable(args.name, args.value)
+        console.print(f"{args.name}: configured=true")
+        console.print("Rouvre PowerShell pour que la variable soit visible dans les nouveaux processus.")
+        return 0
+    console.print("Commandes: omega secrets status|set-env <NAME> <VALUE>")
+    return 2
+
+
+def _set_provider_config_enabled(provider: str, enabled: bool) -> None:
+    if provider not in VALID_PROVIDERS:
+        raise ValueError(f"Provider inconnu: {provider}")
+    data = set_config_value(f"providers.{provider}.enabled", enabled)
+    save_config(data)
+
+
+def _set_provider_base_url(provider: str, url: str) -> None:
+    if provider not in VALID_PROVIDERS:
+        raise ValueError(f"Provider inconnu: {provider}")
+    data = set_config_value(f"providers.{provider}.base_url", url)
+    save_config(data)
+
+
+def _set_user_environment_variable(name: str, value: str) -> None:
+    if not name or any(char in name for char in " =\t\r\n"):
+        raise ValueError("Nom de variable invalide.")
+    if sys.platform == "win32":
+        subprocess.run(
+            [
+                "powershell",
+                "-NoProfile",
+                "-Command",
+                "[Environment]::SetEnvironmentVariable($args[0], $args[1], 'User')",
+                name,
+                value,
+            ],
+            check=True,
+        )
+    else:
+        console.print("[yellow]Set-env persistant est implemente pour Windows. Variable exportee pour ce processus seulement.[/yellow]")
+        os.environ[name] = value
+
+
 def security_command(args: argparse.Namespace) -> int:
-    load_dotenv()
+    _load_legacy_dotenv_if_needed()
     config = OmegaConfig.from_env()
     fixed: list[str] = []
     if args.security_command == "audit":

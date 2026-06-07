@@ -107,70 +107,60 @@ function Set-EnvValue([string]$Path, [string]$Key, [string]$Value) {
     Set-Content -LiteralPath $Path -Value $lines -Encoding UTF8
 }
 
-function Configure-Env([string]$Root, [string]$Workspace, [bool]$OpenBrowser) {
-    $envPath = Join-Path $Root ".env"
-    $example = Join-Path $Root ".env.example"
-    if (-not (Test-Path -LiteralPath $envPath)) {
-        if (Test-Path -LiteralPath $example) {
-            Copy-Item -LiteralPath $example -Destination $envPath
-        } else {
-            New-Item -ItemType File -Path $envPath -Force | Out-Null
-        }
-    } elseif ($Force) {
-        Write-Warn ".env existe; valeurs Omega principales mises a jour sans toucher aux secrets."
-    }
-
+function Configure-OmegaConfig([string]$Root, [string]$Workspace, [bool]$OpenBrowser) {
     $omegaHome = Join-Path $HOME ".omega"
-    $openBrowserValue = if ($OpenBrowser) { "true" } else { "false" }
-    $pairs = [ordered]@{
-        OMEGA_PROVIDER = "codex"
-        OMEGA_MODEL = "gpt-5.5"
-        OMEGA_DEFAULT_MODEL = "codex/gpt-5.5"
-        OMEGA_FALLBACK_MODEL = ""
-        OMEGA_MODEL_SELECTION_ENABLED = "true"
-        OMEGA_MODEL_AUTH_CACHE_SECONDS = "300"
-        OMEGA_MODEL_STATUS_CACHE_SECONDS = "60"
-        OMEGA_WORKSPACE = $Workspace
-        OMEGA_WORKSPACE_FULL_ACCESS = "true"
-        OMEGA_REQUIRE_APPROVAL = "false"
-        OMEGA_REQUIRE_APPROVAL_OUTSIDE_WORKSPACE = "true"
-        OMEGA_SHELL_FULL_ACCESS_IN_WORKSPACE = "true"
-        OMEGA_ALLOW_DELETE_IN_WORKSPACE = "true"
-        OMEGA_ALLOW_GIT_WRITE_IN_WORKSPACE = "true"
-        OMEGA_HOST = "127.0.0.1"
-        OMEGA_PORT = "8765"
-        OMEGA_OPEN_BROWSER = $openBrowserValue
-        OMEGA_CHANNELS_ENABLED = "true"
-        OMEGA_WEBHOOKS_ENABLED = "true"
-        OMEGA_TELEGRAM_ENABLED = "false"
-        OMEGA_DISCORD_ENABLED = "false"
-        OMEGA_TELEGRAM_BOT_TOKEN = ""
-        OMEGA_DISCORD_BOT_TOKEN = ""
-        OMEGA_SCHEDULER_ENABLED = "false"
-        OMEGA_SCHEDULER_TICK_SECONDS = "30"
-        OMEGA_REASONING_STREAM = "true"
-        OMEGA_REASONING_DETAIL = "minimal"
-        OMEGA_FAST_MODE = "true"
-        OMEGA_STREAMING = "true"
-        OMEGA_STATUS_CACHE_SECONDS = "60"
-        OMEGA_CODEX_AUTH_CACHE_SECONDS = "300"
-        OMEGA_MAX_HISTORY_MESSAGES = "20"
-        OMEGA_MAX_MEMORY_RESULTS = "5"
-        OMEGA_MAX_SKILLS_IN_CONTEXT = "5"
-        OMEGA_MAX_TOOL_DESCRIPTIONS = "20"
-        OMEGA_LOAD_PLUGINS_ON_STARTUP = "true"
-        OMEGA_RELOAD_PLUGINS_PER_MESSAGE = "false"
-        OMEGA_RELOAD_SKILLS_PER_MESSAGE = "false"
-        OMEGA_DB_PATH = (Join-Path $omegaHome "omega.db")
-        OMEGA_SKILLS_DIR = (Join-Path $HOME "omega_skills")
-        OMEGA_PLUGINS_DIR = (Join-Path $HOME "omega_plugins")
-    }
-    foreach ($key in $pairs.Keys) { Set-EnvValue $envPath $key $pairs[$key] }
-
     New-Item -ItemType Directory -Path $Workspace -Force | Out-Null
     New-Item -ItemType Directory -Path $omegaHome -Force | Out-Null
     New-Item -ItemType Directory -Path (Join-Path $HOME "omega_skills") -Force | Out-Null
     New-Item -ItemType Directory -Path (Join-Path $HOME "omega_plugins") -Force | Out-Null
+    $configPath = Join-Path $omegaHome "config.json"
+    if ((Test-Path -LiteralPath $configPath) -and -not $Force) {
+        Write-Warn "config.json existe deja; il n'est pas ecrase: $configPath"
+        return
+    }
+    $config = [ordered]@{
+        version = 1
+        app = [ordered]@{ name = "Omega Agent"; language = "fr"; open_browser = $OpenBrowser; ui_theme = "dark" }
+        gateway = [ordered]@{ host = "127.0.0.1"; port = 8765 }
+        workspace = [ordered]@{
+            path = $Workspace
+            full_access = $true
+            require_approval = $false
+            require_approval_outside_workspace = $true
+            shell_full_access = $true
+            allow_delete = $true
+            allow_git_write = $true
+        }
+        model = [ordered]@{ selection_enabled = $true; default = "codex/gpt-5.5"; fallback = $null; auth_cache_seconds = 300; status_cache_seconds = 60 }
+        providers = [ordered]@{
+            codex = [ordered]@{ enabled = $true; auth = [ordered]@{ type = "codex_oauth" }; models = @("gpt-5.5") }
+            openai_api = [ordered]@{ enabled = $false; auth = [ordered]@{ type = "secret_ref"; secret = "OPENAI_API_KEY" }; base_url = $null; models = @() }
+            openrouter = [ordered]@{ enabled = $false; auth = [ordered]@{ type = "secret_ref"; secret = "OPENROUTER_API_KEY" }; base_url = "https://openrouter.ai/api/v1"; models = @() }
+            ollama = [ordered]@{ enabled = $false; auth = [ordered]@{ type = "none" }; base_url = "http://127.0.0.1:11434"; models = @() }
+            anthropic = [ordered]@{ enabled = $false; auth = [ordered]@{ type = "secret_ref"; secret = "ANTHROPIC_API_KEY" }; models = @() }
+            gemini = [ordered]@{ enabled = $false; auth = [ordered]@{ type = "secret_ref"; secret = "GEMINI_API_KEY" }; models = @() }
+            custom_openai_compatible = [ordered]@{ enabled = $false; auth = [ordered]@{ type = "secret_ref"; secret = "CUSTOM_OPENAI_API_KEY" }; base_url = $null; models = @() }
+        }
+        channels = [ordered]@{
+            enabled = $true
+            webhooks_enabled = $true
+            telegram = [ordered]@{ enabled = $false; token_secret = "OMEGA_TELEGRAM_BOT_TOKEN" }
+            discord = [ordered]@{ enabled = $false; token_secret = "OMEGA_DISCORD_BOT_TOKEN" }
+        }
+        scheduler = [ordered]@{ enabled = $false; tick_seconds = 30 }
+        reasoning = [ordered]@{ stream = $true; detail = "minimal" }
+        performance = [ordered]@{
+            fast_mode = $true; streaming = $true; status_cache_seconds = 60
+            max_history_messages = 20; max_memory_results = 5; max_skills_in_context = 5; max_tool_descriptions = 20
+            load_plugins_on_startup = $true; reload_plugins_per_message = $false; reload_skills_per_message = $false
+        }
+        paths = [ordered]@{
+            skills_dir = (Join-Path $HOME "omega_skills")
+            plugins_dir = (Join-Path $HOME "omega_plugins")
+            db_path = (Join-Path $omegaHome "omega.db")
+        }
+    }
+    $config | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $configPath -Encoding UTF8
 }
 
 Write-Host ""
@@ -218,8 +208,8 @@ if (Test-Path -LiteralPath (Join-Path $InstallDir "omega_control")) {
     }
 }
 
-Write-Step "Configuration .env et dossiers"
-Configure-Env $InstallDir $WorkspaceDir (-not $NoOpen)
+Write-Step "Configuration config.json et dossiers"
+Configure-OmegaConfig $InstallDir $WorkspaceDir (-not $NoOpen)
 
 Write-Step "Installation de la commande globale omega"
 & powershell -ExecutionPolicy Bypass -File (Join-Path $InstallDir "scripts\install-powershell-command.ps1") -InstallDir $InstallDir -Force
@@ -239,6 +229,7 @@ if (-not $SkipCodex) {
 Write-Step "Diagnostic installation"
 $omegaExe = Join-Path $InstallDir ".venv\Scripts\omega.exe"
 if (Test-Path -LiteralPath $omegaExe) {
+    & $omegaExe config doctor
     & $omegaExe doctor
 } else {
     & powershell -ExecutionPolicy Bypass -File (Join-Path $InstallDir "scripts\doctor-install.ps1") -InstallDir $InstallDir -WorkspaceDir $WorkspaceDir

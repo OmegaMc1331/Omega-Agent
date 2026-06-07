@@ -15,6 +15,7 @@ from omega_agent.gateway.models import (
     ChannelCreateRequest,
     ChannelPatchRequest,
     ChatRequest,
+    ConfigPatchRequest,
     DelegationCreateRequest,
     JobCreateRequest,
     MemoryCreateRequest,
@@ -36,6 +37,8 @@ from omega_agent.gateway.models import (
     ToolUpdateRequest,
     WebhookMessageRequest,
 )
+from omega_agent.config import OmegaConfig
+from omega_agent.config_store import config_path, expected_secret_status, migrate_env_to_config, parse_cli_value, redact_config_for_display, save_config, set_config_value
 from omega_agent.security.audit import apply_safe_fixes, list_audit_logs, run_security_audit
 from omega_agent.security.desktop_policy import desktop_screenshots_dir
 from omega_agent.security.redaction import redact
@@ -76,6 +79,10 @@ def create_router() -> APIRouter:
                 "current_model": current_model,
                 "codex_auth_status": "connected" if codex_connected else "disconnected" if codex_connected is False else "not_applicable",
                 "workspace": str(state.config.workspace),
+                "config_path": str(state.config.config_path or config_path()),
+                "config_status": state.config.config_status,
+                "legacy_env_present": state.config.legacy_env_present,
+                "model_config_source": state.config.model_config_source,
                 "version": state.version,
                 "uptime": _uptime_seconds(state),
                 "host": state.config.host,
@@ -114,6 +121,51 @@ def create_router() -> APIRouter:
     @router.get("/api/performance/recent")
     async def api_performance_recent(request: Request):
         return request.app.state.gateway_state.performance.recent(limit=20)
+
+    @router.get("/api/config")
+    async def api_config(request: Request):
+        return {"path": str(config_path()), "config": redact_config_for_display()}
+
+    @router.get("/api/config/path")
+    async def api_config_path(request: Request):
+        return {"path": str(config_path())}
+
+    @router.patch("/api/config")
+    async def api_patch_config(payload: ConfigPatchRequest, request: Request):
+        allowed_prefixes = (
+            "app.",
+            "gateway.",
+            "workspace.",
+            "model.",
+            "providers.",
+            "channels.",
+            "scheduler.",
+            "reasoning.",
+            "performance.",
+            "paths.",
+        )
+        try:
+            data = None
+            for key, value in payload.values.items():
+                if not isinstance(key, str) or not key.startswith(allowed_prefixes):
+                    raise ValueError(f"Config non modifiable: {key}")
+                data = set_config_value(key, parse_cli_value(str(value)) if isinstance(value, str) else value, data)
+            if data is not None:
+                save_config(data)
+            _reload_config_state(request.app.state.gateway_state)
+            return {"path": str(config_path()), "config": redact_config_for_display()}
+        except (KeyError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @router.post("/api/config/migrate-env")
+    async def api_config_migrate_env(request: Request):
+        result = migrate_env_to_config()
+        _reload_config_state(request.app.state.gateway_state)
+        return result
+
+    @router.get("/api/secrets/status")
+    async def api_secrets_status(request: Request):
+        return expected_secret_status()
 
     @router.post("/api/registries/reload")
     async def api_reload_registries(request: Request):
@@ -854,6 +906,7 @@ def create_router() -> APIRouter:
         try:
             state = request.app.state.gateway_state
             result = state.settings.patch(payload.values)
+            _persist_settings_to_config(payload.values)
             state.config = _patched_runtime_config(state.config, payload.values)
             state.settings = SettingsStore(state.config)
             return result
@@ -865,6 +918,14 @@ def create_router() -> APIRouter:
 
 def _uptime_seconds(state) -> int:
     return int((datetime.now(timezone.utc) - state.started_at).total_seconds())
+
+
+def _reload_config_state(state) -> None:
+    state.config = OmegaConfig.from_env()
+    state.settings = SettingsStore(state.config)
+    state.model_selector = type(state.model_selector)(state.config)
+    state._runtime = None
+    state.reload_registries(log_event=False)
 
 
 def _redact_record(record: dict) -> dict:
@@ -890,3 +951,25 @@ def _patched_runtime_config(config, values: dict):
     }
     updates = {attr: bool(values[key]) for key, attr in mapping.items() if key in values}
     return replace(config, **updates) if updates else config
+
+
+def _persist_settings_to_config(values: dict) -> None:
+    mapping = {
+        "open_browser": "app.open_browser",
+        "workspace_full_access": "workspace.full_access",
+        "require_approvals": "workspace.require_approval",
+        "require_approval_outside_workspace": "workspace.require_approval_outside_workspace",
+        "shell_full_access_in_workspace": "workspace.shell_full_access",
+        "allow_delete_in_workspace": "workspace.allow_delete",
+        "allow_git_write_in_workspace": "workspace.allow_git_write",
+        "theme": "app.ui_theme",
+        "default_model_ref": "model.default",
+        "fallback_model_ref": "model.fallback",
+        "model_selection_enabled": "model.selection_enabled",
+    }
+    data = None
+    for key, config_key in mapping.items():
+        if key in values:
+            data = set_config_value(config_key, values[key], data)
+    if data is not None:
+        save_config(data)

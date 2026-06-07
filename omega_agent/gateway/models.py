@@ -186,6 +186,10 @@ class SettingsPatchRequest(BaseModel):
     values: dict = Field(default_factory=dict)
 
 
+class ConfigPatchRequest(BaseModel):
+    values: dict = Field(default_factory=dict)
+
+
 class StatusResponse(BaseModel):
     ok: bool
     provider: str
