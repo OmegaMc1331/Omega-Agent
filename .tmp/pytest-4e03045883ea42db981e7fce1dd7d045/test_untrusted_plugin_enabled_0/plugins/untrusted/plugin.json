@@ -1,0 +1,1 @@
+{"id": "untrusted", "name": "Untrusted", "version": "0.1.0", "description": "Untrusted", "enabled": true, "trust_level": "untrusted", "permissions": ["skills.register"], "declares": {"tools": [], "skills": [], "channels": [], "hooks": []}}

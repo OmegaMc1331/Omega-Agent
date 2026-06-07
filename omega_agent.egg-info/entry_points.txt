@@ -1,0 +1,2 @@
+[console_scripts]
+omega = omega_agent.main:run

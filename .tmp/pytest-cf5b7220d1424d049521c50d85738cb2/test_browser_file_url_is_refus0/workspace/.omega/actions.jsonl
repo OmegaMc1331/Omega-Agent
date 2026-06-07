@@ -1,0 +1,1 @@
+{"ts": "2026-06-06T10:09:11.943771+00:00", "action": "tool_denied", "payload": {"tool": "browser_open_url", "reason": "URL navigateur refusee: schema file interdit.", "session_id": "3f403ea97fe4423e967897bde1111924"}}

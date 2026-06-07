@@ -1,0 +1,3 @@
+{"ts": "2026-06-06T01:43:56.038051+00:00", "action": "event", "payload": {"type": "tool.started", "session_id": "2ea806a8c4ab4ef7a87341a4fe67f91f"}}
+{"ts": "2026-06-06T01:43:56.050058+00:00", "action": "event", "payload": {"type": "tool.completed", "session_id": "2ea806a8c4ab4ef7a87341a4fe67f91f"}}
+{"ts": "2026-06-06T01:43:56.050749+00:00", "action": "tool_completed", "payload": {"tool": "read_file"}}

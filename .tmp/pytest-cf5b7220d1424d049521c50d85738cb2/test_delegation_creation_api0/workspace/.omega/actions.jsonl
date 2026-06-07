@@ -1,0 +1,8 @@
+{"ts": "2026-06-06T10:09:20.326483+00:00", "action": "event", "payload": {"type": "session.created", "session_id": "e251b6fac1cc44acab3f26758ae590c7"}}
+{"ts": "2026-06-06T10:09:20.362454+00:00", "action": "delegation_created", "payload": {"delegation_id": "967a49c87bed4c87a1c3857b925bf1a6", "child_agent_id": "omega-research"}}
+{"ts": "2026-06-06T10:09:20.374533+00:00", "action": "event", "payload": {"type": "delegation.created", "session_id": "e251b6fac1cc44acab3f26758ae590c7"}}
+{"ts": "2026-06-06T10:09:20.394435+00:00", "action": "delegation_updated", "payload": {"delegation_id": "967a49c87bed4c87a1c3857b925bf1a6", "status": "running"}}
+{"ts": "2026-06-06T10:09:20.408469+00:00", "action": "event", "payload": {"type": "delegation.started", "session_id": "e251b6fac1cc44acab3f26758ae590c7"}}
+{"ts": "2026-06-06T10:09:20.452494+00:00", "action": "delegation_updated", "payload": {"delegation_id": "967a49c87bed4c87a1c3857b925bf1a6", "status": "completed"}}
+{"ts": "2026-06-06T10:09:20.480527+00:00", "action": "event", "payload": {"type": "delegation.completed", "session_id": "e251b6fac1cc44acab3f26758ae590c7"}}
+{"ts": "2026-06-06T10:09:20.481217+00:00", "action": "delegation_completed", "payload": {"delegation_id": "967a49c87bed4c87a1c3857b925bf1a6"}}

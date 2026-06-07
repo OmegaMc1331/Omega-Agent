@@ -1,0 +1,1 @@
+{"ts": "2026-06-06T01:43:49.529156+00:00", "action": "tool_denied", "payload": {"tool": "delegate_to_agent", "reason": "Tool non autorise par le profil agent: delegate_to_agent", "session_id": "14ba9485bc0348b493e297507121017e"}}

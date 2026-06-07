@@ -1,0 +1,5 @@
+{"ts": "2026-06-05T21:45:58.326798+00:00", "action": "event", "payload": {"type": "job.created", "session_id": null}}
+{"ts": "2026-06-05T21:45:58.327736+00:00", "action": "job_created", "payload": {"job_id": "563a69ae6df44b948473a253aaf4ef7a", "kind": "scan_workspace"}}
+{"ts": "2026-06-05T21:45:58.344548+00:00", "action": "job_updated", "payload": {"job_id": "563a69ae6df44b948473a253aaf4ef7a", "status": "running"}}
+{"ts": "2026-06-05T21:45:58.358646+00:00", "action": "job_updated", "payload": {"job_id": "563a69ae6df44b948473a253aaf4ef7a", "status": "succeeded"}}
+{"ts": "2026-06-05T21:45:58.372616+00:00", "action": "event", "payload": {"type": "job.updated", "session_id": null}}

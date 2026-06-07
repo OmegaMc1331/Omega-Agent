@@ -1,0 +1,5 @@
+{"ts": "2026-06-06T01:43:44.485713+00:00", "action": "event", "payload": {"type": "tool.started", "session_id": "5f24c70bae7d4afc82ee8d1ff929d835"}}
+{"ts": "2026-06-06T01:43:44.497739+00:00", "action": "event", "payload": {"type": "desktop.action.started", "session_id": "5f24c70bae7d4afc82ee8d1ff929d835"}}
+{"ts": "2026-06-06T01:43:44.509620+00:00", "action": "event", "payload": {"type": "tool.completed", "session_id": "5f24c70bae7d4afc82ee8d1ff929d835"}}
+{"ts": "2026-06-06T01:43:44.521613+00:00", "action": "event", "payload": {"type": "desktop.action.completed", "session_id": "5f24c70bae7d4afc82ee8d1ff929d835"}}
+{"ts": "2026-06-06T01:43:44.522306+00:00", "action": "tool_completed", "payload": {"tool": "desktop_screenshot"}}

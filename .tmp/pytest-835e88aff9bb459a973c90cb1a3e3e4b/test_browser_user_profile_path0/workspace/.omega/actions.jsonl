@@ -1,0 +1,1 @@
+{"ts": "2026-06-06T01:43:41.738425+00:00", "action": "tool_denied", "payload": {"tool": "browser_get_title", "reason": "Profil navigateur utilisateur refuse.", "session_id": "ee3b2e83e3d94d28ab79a5c2b5c7361a"}}

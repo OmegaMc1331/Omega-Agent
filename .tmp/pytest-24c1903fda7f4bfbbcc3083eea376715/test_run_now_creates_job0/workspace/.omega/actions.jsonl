@@ -1,0 +1,9 @@
+{"ts": "2026-06-05T21:46:04.828560+00:00", "action": "scheduled_task_created", "payload": {"task_id": "62f6c4581d8643109fb659b421285ab2"}}
+{"ts": "2026-06-05T21:46:04.840607+00:00", "action": "event", "payload": {"type": "scheduled_task.created", "session_id": null}}
+{"ts": "2026-06-05T21:46:04.872651+00:00", "action": "event", "payload": {"type": "job.created", "session_id": null}}
+{"ts": "2026-06-05T21:46:04.873427+00:00", "action": "job_created", "payload": {"job_id": "acd674b2e57f41dea04d325b85b8de26", "kind": "run_scheduled_prompt"}}
+{"ts": "2026-06-05T21:46:04.890503+00:00", "action": "job_updated", "payload": {"job_id": "acd674b2e57f41dea04d325b85b8de26", "status": "running"}}
+{"ts": "2026-06-05T21:46:04.947084+00:00", "action": "job_updated", "payload": {"job_id": "acd674b2e57f41dea04d325b85b8de26", "status": "succeeded"}}
+{"ts": "2026-06-05T21:46:04.962501+00:00", "action": "event", "payload": {"type": "job.updated", "session_id": null}}
+{"ts": "2026-06-05T21:46:04.974623+00:00", "action": "scheduled_task_run_now", "payload": {"task_id": "62f6c4581d8643109fb659b421285ab2", "job_id": "acd674b2e57f41dea04d325b85b8de26"}}
+{"ts": "2026-06-05T21:46:04.988750+00:00", "action": "event", "payload": {"type": "scheduled_task.run_now", "session_id": null}}

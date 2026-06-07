@@ -1,0 +1,3 @@
+{"ts": "2026-06-05T22:20:42.159429+00:00", "action": "event", "payload": {"type": "memory.created", "session_id": null}}
+{"ts": "2026-06-05T22:20:42.160390+00:00", "action": "memory_created", "payload": {"memory_id": "79bd7b71546c479186937f518300bb10", "scope": "global"}}
+{"ts": "2026-06-05T22:20:42.181546+00:00", "action": "memory_deleted", "payload": {"memory_id": "79bd7b71546c479186937f518300bb10"}}

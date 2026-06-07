@@ -1,0 +1,1 @@
+{"ts": "2026-06-05T22:20:47.563251+00:00", "action": "tool_denied", "payload": {"tool": "run_shell", "reason": "Tool non autorise par le profil agent: run_shell", "session_id": "4a914e50242e464cb5aede1906af09e0"}}

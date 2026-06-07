@@ -1,0 +1,7 @@
+{"ts": "2026-06-06T02:44:13.834184+00:00", "action": "delegation_created", "payload": {"delegation_id": "a8dea5522d35482cb88016318afc98ac", "child_agent_id": "omega-security"}}
+{"ts": "2026-06-06T02:44:13.846442+00:00", "action": "event", "payload": {"type": "delegation.created", "session_id": "b54954d9eeb04cb0be8a43ce621cf55b"}}
+{"ts": "2026-06-06T02:44:13.868262+00:00", "action": "delegation_updated", "payload": {"delegation_id": "a8dea5522d35482cb88016318afc98ac", "status": "running"}}
+{"ts": "2026-06-06T02:44:13.884492+00:00", "action": "event", "payload": {"type": "delegation.started", "session_id": "b54954d9eeb04cb0be8a43ce621cf55b"}}
+{"ts": "2026-06-06T02:44:13.932324+00:00", "action": "delegation_updated", "payload": {"delegation_id": "a8dea5522d35482cb88016318afc98ac", "status": "completed"}}
+{"ts": "2026-06-06T02:44:13.962151+00:00", "action": "event", "payload": {"type": "delegation.completed", "session_id": "b54954d9eeb04cb0be8a43ce621cf55b"}}
+{"ts": "2026-06-06T02:44:13.963121+00:00", "action": "delegation_completed", "payload": {"delegation_id": "a8dea5522d35482cb88016318afc98ac"}}

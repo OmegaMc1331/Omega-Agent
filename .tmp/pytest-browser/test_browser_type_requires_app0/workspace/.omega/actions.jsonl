@@ -1,0 +1,2 @@
+{"ts": "2026-06-05T22:03:10.952517+00:00", "action": "event", "payload": {"type": "approval.required", "session_id": "62fb2d1e19ba4da184c44522438ce72a"}}
+{"ts": "2026-06-05T22:03:10.953438+00:00", "action": "approval_required", "payload": {"approval_id": "dd3e3bec6228461181dad83886a1c6d8", "action": "browser_type", "risk": "critical"}}

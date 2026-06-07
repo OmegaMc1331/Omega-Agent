@@ -1,0 +1,2 @@
+{"ts": "2026-06-05T21:46:04.482631+00:00", "action": "scheduled_task_created", "payload": {"task_id": "32c65616454149a1b8a8ca256dad0a4c"}}
+{"ts": "2026-06-05T21:46:04.492647+00:00", "action": "event", "payload": {"type": "scheduled_task.created", "session_id": null}}

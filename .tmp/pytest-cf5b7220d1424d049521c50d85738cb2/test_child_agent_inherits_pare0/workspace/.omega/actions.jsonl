@@ -1,0 +1,7 @@
+{"ts": "2026-06-06T10:09:20.700412+00:00", "action": "delegation_created", "payload": {"delegation_id": "180718a3d4254ffa8cd3fbea27dba306", "child_agent_id": "omega-coder"}}
+{"ts": "2026-06-06T10:09:20.712462+00:00", "action": "event", "payload": {"type": "delegation.created", "session_id": "b03ee52c23494ad88a66d67b81862722"}}
+{"ts": "2026-06-06T10:09:20.730493+00:00", "action": "delegation_updated", "payload": {"delegation_id": "180718a3d4254ffa8cd3fbea27dba306", "status": "running"}}
+{"ts": "2026-06-06T10:09:20.744440+00:00", "action": "event", "payload": {"type": "delegation.started", "session_id": "b03ee52c23494ad88a66d67b81862722"}}
+{"ts": "2026-06-06T10:09:20.782298+00:00", "action": "delegation_updated", "payload": {"delegation_id": "180718a3d4254ffa8cd3fbea27dba306", "status": "completed"}}
+{"ts": "2026-06-06T10:09:20.810444+00:00", "action": "event", "payload": {"type": "delegation.completed", "session_id": "b03ee52c23494ad88a66d67b81862722"}}
+{"ts": "2026-06-06T10:09:20.811273+00:00", "action": "delegation_completed", "payload": {"delegation_id": "180718a3d4254ffa8cd3fbea27dba306"}}

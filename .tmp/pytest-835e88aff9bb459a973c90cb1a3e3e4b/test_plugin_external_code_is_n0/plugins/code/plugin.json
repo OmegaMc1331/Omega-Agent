@@ -1,0 +1,1 @@
+{"id": "code-plugin", "name": "Example Plugin", "version": "0.1.0", "description": "Example manifest-only plugin.", "author": "Omega", "enabled": false, "trust_level": "untrusted", "permissions": ["skills.register"], "declares": {"tools": [], "skills": [], "channels": [], "hooks": []}}

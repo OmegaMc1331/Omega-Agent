@@ -1,0 +1,2 @@
+{"ts": "2026-06-06T02:44:20.436337+00:00", "action": "event", "payload": {"type": "session.created", "session_id": "c454154c519b4c91827c7e8b8088d4d8"}}
+{"ts": "2026-06-06T02:44:20.482226+00:00", "action": "event", "payload": {"type": "session.project.updated", "session_id": "c454154c519b4c91827c7e8b8088d4d8"}}

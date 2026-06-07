@@ -1,0 +1,1 @@
+{"ts": "2026-06-06T02:44:04.763313+00:00", "action": "tool_denied", "payload": {"tool": "write_file", "reason": "Tool non autorise par le profil agent: write_file", "session_id": "56695e9afbd4437b926b73a87bf45d2f"}}

@@ -1,0 +1,4 @@
+{"ts": "2026-06-04T18:41:23.842670+00:00", "action": "event", "payload": {"type": "approval.required", "session_id": null}}
+{"ts": "2026-06-04T18:41:23.843497+00:00", "action": "approval_required", "payload": {"approval_id": "519d66cf926f4648b8b5735d168c5a2f", "action": "run_shell", "risk": "high"}}
+{"ts": "2026-06-04T18:41:23.872603+00:00", "action": "event", "payload": {"type": "approval.resolved", "session_id": null}}
+{"ts": "2026-06-04T18:41:23.873463+00:00", "action": "approval_resolved", "payload": {"approval_id": "519d66cf926f4648b8b5735d168c5a2f", "status": "approved"}}

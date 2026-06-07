@@ -1,0 +1,1 @@
+{"ts": "2026-06-05T22:20:46.494399+00:00", "action": "tool_denied", "payload": {"tool": "read_file", "reason": "Acces refuse: chemin hors projet.", "session_id": "bc200a180e974d43a3c5dafa67c29dfa"}}

@@ -1,0 +1,1 @@
+{"ts": "2026-06-05T22:20:46.815156+00:00", "action": "tool_denied", "payload": {"tool": "read_file", "reason": "Acces refuse: chemin sensible.", "session_id": "c229b050ad4e41dda91f779ad1983312"}}

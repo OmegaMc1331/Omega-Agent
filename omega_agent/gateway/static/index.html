@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Omega Agent</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">Omega Agent</div>
+        <div class="status-panel">
+          <div><span>Provider</span><strong id="provider">...</strong></div>
+          <div><span>Modèle</span><strong id="model">...</strong></div>
+          <div><span>Workspace</span><strong id="workspace">...</strong></div>
+        </div>
+      </aside>
+      <main class="chat">
+        <section id="messages" class="messages" aria-live="polite">
+          <article class="message assistant">
+            <div class="bubble">Bonjour, je suis Omega Agent.</div>
+          </article>
+        </section>
+        <form id="chat-form" class="composer">
+          <textarea id="message-input" rows="1" placeholder="Envoyer un message à Omega" autocomplete="off"></textarea>
+          <button id="send-button" type="submit">Envoyer</button>
+        </form>
+      </main>
+    </div>
+    <script src="/static/app.js"></script>
+  </body>
+</html>

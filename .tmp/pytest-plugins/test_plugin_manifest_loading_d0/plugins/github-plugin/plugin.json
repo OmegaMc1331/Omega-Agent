@@ -1,0 +1,1 @@
+{"id": "github-plugin", "name": "GitHub Plugin", "version": "0.1.0", "enabled": false, "trust_level": "untrusted", "declares": {"tools": [], "skills": [], "channels": [], "hooks": []}}

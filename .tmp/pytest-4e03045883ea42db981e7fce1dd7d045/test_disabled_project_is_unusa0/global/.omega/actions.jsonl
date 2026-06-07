@@ -1,0 +1,1 @@
+{"ts": "2026-06-06T02:44:22.318613+00:00", "action": "tool_denied", "payload": {"tool": "read_file", "reason": "Projet introuvable, desactive ou inutilisable.", "session_id": "1dbb2137c0d54512817bb0e753e3d088"}}

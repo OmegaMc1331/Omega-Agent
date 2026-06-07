@@ -1,0 +1,1 @@
+{"ts": "2026-06-06T02:44:05.461170+00:00", "action": "tool_denied", "payload": {"tool": "read_file", "reason": "Profil agent introuvable, desactive ou inutilisable.", "session_id": "67ada70389824cee9cd793cac5541d70"}}

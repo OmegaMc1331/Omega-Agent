@@ -1,0 +1,4 @@
+{"ts": "2026-06-05T22:20:34.825431+00:00", "action": "event", "payload": {"type": "approval.required", "session_id": "81d658fb238c492d85b5cd9b18c0bcf9"}}
+{"ts": "2026-06-05T22:20:34.826383+00:00", "action": "approval_required", "payload": {"approval_id": "061f15406d6646b1920f114e6427757c", "action": "desktop_click", "risk": "high"}}
+{"ts": "2026-06-05T22:20:34.951510+00:00", "action": "event", "payload": {"type": "approval.required", "session_id": "81d658fb238c492d85b5cd9b18c0bcf9"}}
+{"ts": "2026-06-05T22:20:34.952197+00:00", "action": "approval_required", "payload": {"approval_id": "d75d6f67c6c745b8bedc0a948d5ecaea", "action": "desktop_type", "risk": "high"}}
