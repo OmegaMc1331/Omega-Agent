@@ -48,6 +48,22 @@ def _write_file(config: OmegaConfig, relative_path: str, content: str) -> str:
     return f"Fichier ecrit: {relative_path}"
 
 
+def _append_file(config: OmegaConfig, relative_path: str, content: str) -> str:
+    path = safe_path(config, relative_path)
+    decision = workspace_policy_decision(config, "append_file", {"relative_path": relative_path, "content": content[:256]}, require_approval=config.require_approval)
+    if decision.action == "deny":
+        log_action(config, "append_file_denied", {"path": relative_path, "reason": decision.reason, "risk": decision.risk_level})
+        return f"Ajout refuse: {decision.reason}"
+    if decision.action == "require_approval" and config.require_approval and not confirm(config, f"Modifier le fichier {path} ?"):
+        log_action(config, "append_file_denied", {"path": relative_path})
+        return "Modification refusee par l'utilisateur."
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(content)
+    log_action(config, "append_file", {"path": relative_path, "bytes": len(content.encode("utf-8"))})
+    return f"Fichier modifie: {relative_path}"
+
+
 def _delete_file(config: OmegaConfig, relative_path: str) -> str:
     path = safe_path(config, relative_path)
     if not config.allow_delete_in_workspace:
@@ -145,6 +161,13 @@ def _list_tree(config: OmegaConfig, relative_path: str = ".", max_entries: int =
     return "\n".join(entries) or "Dossier vide."
 
 
+def _file_exists(config: OmegaConfig, relative_path: str) -> str:
+    path = safe_path(config, relative_path)
+    exists = path.exists()
+    log_action(config, "file_exists", {"path": relative_path, "exists": exists})
+    return "true" if exists else "false"
+
+
 @function_tool
 def list_files(relative_path: str) -> str:
     """List files inside Omega Agent's workspace."""
@@ -161,6 +184,12 @@ def read_file(relative_path: str) -> str:
 def write_file(relative_path: str, content: str) -> str:
     """Write a UTF-8 text file inside Omega Agent's workspace."""
     return _write_file(active_config(), relative_path, content)
+
+
+@function_tool
+def append_file(relative_path: str, content: str) -> str:
+    """Append UTF-8 text to a file inside Omega Agent's workspace."""
+    return _append_file(active_config(), relative_path, content)
 
 
 @function_tool
@@ -197,3 +226,9 @@ def copy_file(source_path: str, destination_path: str) -> str:
 def list_tree(relative_path: str = ".", max_entries: int = 200) -> str:
     """List a tree inside Omega Agent's workspace."""
     return _list_tree(active_config(), relative_path, max_entries)
+
+
+@function_tool
+def file_exists(relative_path: str) -> str:
+    """Check whether a file exists inside Omega Agent's workspace."""
+    return _file_exists(active_config(), relative_path)

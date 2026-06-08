@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import re
 from collections.abc import Callable
 from contextlib import nullcontext
 from dataclasses import replace
@@ -18,6 +20,7 @@ from omega_agent.runtime.projects import ProjectsStore
 from omega_agent.runtime.reasoning import ReasoningSink, emit_reasoning_event_async
 from omega_agent.runtime.router import choose_agent_profile
 from omega_agent.runtime.sessions import SessionsStore
+from omega_agent.runtime.tool_broker import ToolBroker
 from omega_agent.security.project_policy import project_config
 from omega_agent.security.prompt_injection import scan_untrusted_content
 from omega_agent.tools.files import copy_file, create_directory, delete_directory, delete_file, list_files, list_tree, move_file, read_file, write_file
@@ -91,6 +94,7 @@ class OmegaRuntime:
         self.skills_provider = skills_provider
         self.performance_store = performance_store
         self.model_selector = model_selector or ModelSelector(config)
+        self.tool_broker = ToolBroker(config)
 
     async def send_message(
         self,
@@ -222,36 +226,45 @@ class OmegaRuntime:
             if identity_output is not None:
                 output = identity_output
             else:
-                try:
-                    output = await self._run_model_turn(
-                        active_config,
-                        resolved_model.primary_model_ref,
-                        session_id,
-                        message,
-                        history,
-                        profile,
-                        user_message.id,
-                        reasoning_sink,
-                        perf,
-                    )
-                except Exception as primary_exc:
-                    if not resolved_model.fallback_model_ref:
-                        self.events.add("model.error", {"model_ref": resolved_model.primary_model_ref, "error": str(primary_exc)}, session_id=session_id)
-                        raise
-                    self.events.add("model.fallback", {"from": resolved_model.primary_model_ref, "to": resolved_model.fallback_model_ref, "error": str(primary_exc)}, session_id=session_id)
-                    fallback_provider, fallback_model = split_model_ref(resolved_model.fallback_model_ref)
-                    fallback_config = replace(active_config, provider=fallback_provider, model=fallback_model)
-                    output = await self._run_model_turn(
-                        fallback_config,
-                        resolved_model.fallback_model_ref,
-                        session_id,
-                        message,
-                        history,
-                        profile,
-                        user_message.id,
-                        reasoning_sink,
-                        perf,
-                    )
+                direct_actions = _direct_actions_from_message(message)
+                if direct_actions:
+                    output = await self._execute_omega_actions(direct_actions, session_id, user_message.id, reasoning_sink)
+                else:
+                    try:
+                        model_output = await self._run_model_turn(
+                            active_config,
+                            resolved_model.primary_model_ref,
+                            session_id,
+                            message,
+                            history,
+                            profile,
+                            user_message.id,
+                            reasoning_sink,
+                            perf,
+                        )
+                    except Exception as primary_exc:
+                        if not resolved_model.fallback_model_ref:
+                            self.events.add("model.error", {"model_ref": resolved_model.primary_model_ref, "error": str(primary_exc)}, session_id=session_id)
+                            raise
+                        self.events.add("model.fallback", {"from": resolved_model.primary_model_ref, "to": resolved_model.fallback_model_ref, "error": str(primary_exc)}, session_id=session_id)
+                        fallback_provider, fallback_model = split_model_ref(resolved_model.fallback_model_ref)
+                        fallback_config = replace(active_config, provider=fallback_provider, model=fallback_model)
+                        model_output = await self._run_model_turn(
+                            fallback_config,
+                            resolved_model.fallback_model_ref,
+                            session_id,
+                            message,
+                            history,
+                            profile,
+                            user_message.id,
+                            reasoning_sink,
+                            perf,
+                        )
+                    actions = _extract_omega_actions(model_output)
+                    if actions:
+                        output = await self._execute_omega_actions(actions, session_id, user_message.id, reasoning_sink)
+                    else:
+                        output = model_output
         except Exception as exc:
             await emit_reasoning_event_async(
                 session_id,
@@ -371,6 +384,40 @@ class OmegaRuntime:
             self.model_selector.record_usage_complete(usage_id, status="failed", latency_ms=latency_ms, error=str(exc))
             raise
 
+    async def _execute_omega_actions(
+        self,
+        actions: list[dict],
+        session_id: str,
+        user_message_id: str,
+        reasoning_sink: ReasoningSink | None,
+    ) -> str:
+        observations: list[str] = []
+        for action in actions[:10]:
+            tool_id = str(action.get("tool") or action.get("name") or "").strip()
+            arguments = action.get("arguments") if isinstance(action.get("arguments"), dict) else {}
+            if not tool_id:
+                observations.append("Action refusee: tool manquant.")
+                continue
+            await emit_reasoning_event_async(
+                session_id,
+                "reasoning.step",
+                "Execution d'une action",
+                f"Omega utilise {tool_id}.",
+                config=self.config,
+                status="running",
+                metadata={"tool_name": tool_id},
+                message_id=user_message_id,
+                sink=reasoning_sink,
+            )
+            result = await asyncio.to_thread(self.tool_broker.call, tool_id, arguments, session_id)
+            if result.status == "completed":
+                observations.append(result.output)
+            elif result.status == "approval_required":
+                observations.append(f"Approval requise pour {tool_id}.")
+            else:
+                observations.append(f"Action refusee ({tool_id}): {result.output}")
+        return _final_response_from_observations(observations)
+
 
 def _short_analysis(message: str, prompt_injection_matches: list[str], untrusted_input: bool) -> str:
     tools = _probable_tools(message)
@@ -385,6 +432,95 @@ def _short_analysis(message: str, prompt_injection_matches: list[str], untrusted
     if prompt_injection_matches:
         parts.append("Risque: contenu potentiellement hostile detecte dans l'entree.")
     return "\n".join(parts)
+
+
+def _extract_omega_actions(output: str) -> list[dict]:
+    text = str(output or "").strip()
+    if not text:
+        return []
+    candidates = [text]
+    fenced = re.findall(r"```(?:json)?\s*(\{.*?\})\s*```", text, flags=re.DOTALL | re.IGNORECASE)
+    candidates.extend(fenced)
+    for candidate in candidates:
+        try:
+            payload = json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+        actions = _actions_from_payload(payload)
+        if actions:
+            return actions
+    for match in re.finditer(r"\{", text):
+        candidate = text[match.start() :]
+        try:
+            payload = json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+        actions = _actions_from_payload(payload)
+        if actions:
+            return actions
+    return []
+
+
+def _actions_from_payload(payload: object) -> list[dict]:
+    if not isinstance(payload, dict):
+        return []
+    if isinstance(payload.get("omega_actions"), list):
+        return [item for item in payload["omega_actions"] if isinstance(item, dict)]
+    if isinstance(payload.get("omega_action"), dict):
+        return [payload["omega_action"]]
+    if payload.get("tool") and isinstance(payload.get("arguments"), dict):
+        return [payload]
+    return []
+
+
+def _direct_actions_from_message(message: str) -> list[dict]:
+    text = message.strip()
+    lowered = text.lower()
+    file_match = re.search(r"([A-Za-z]:[\\/][\w.\- \\/]+?\.[A-Za-z0-9]{1,12}|[^\s\"']+\.[A-Za-z0-9]{1,12})", text)
+    if any(word in lowered for word in ["crée", "cree", "creer", "créer", "create"]) and file_match:
+        path = file_match.group(1).strip().strip('"').strip("'")
+        content = _extract_requested_content(text)
+        return [{"tool": "write_file", "arguments": {"relative_path": path, "content": content}}]
+    if any(word in lowered for word in ["supprime", "supprimer", "delete"]) and file_match:
+        path = file_match.group(1).strip().strip('"').strip("'")
+        return [{"tool": "delete_file", "arguments": {"relative_path": path}}]
+    if lowered in {"dir", "lance dir", "execute dir", "exécute dir"} or lowered.startswith("lance dir"):
+        return [{"tool": "run_shell", "arguments": {"command": "cmd /c dir" if _is_windows() else "ls"}}]
+    shell_match = re.match(r"^(?:lance|execute|exécute)\s+(.+)$", lowered)
+    if shell_match:
+        command = text.split(maxsplit=1)[1]
+        return [{"tool": "run_shell", "arguments": {"command": command}}]
+    return []
+
+
+def _extract_requested_content(message: str) -> str:
+    quoted = re.search(r"[\"“']([^\"”']+)[\"”']", message)
+    if quoted:
+        return quoted.group(1)
+    marker_patterns = [
+        r"(?:texte|contenu)\s+(.+)$",
+        r"avec\s+(?:le\s+)?(?:texte|contenu)\s+(.+)$",
+    ]
+    for pattern in marker_patterns:
+        match = re.search(pattern, message, flags=re.IGNORECASE)
+        if match:
+            return match.group(1).strip().strip(".")
+    return ""
+
+
+def _final_response_from_observations(observations: list[str]) -> str:
+    if not observations:
+        return "Aucune action Omega n'a ete executee."
+    denied = [item for item in observations if item.lower().startswith(("action refusee", "approval requise")) or "refuse" in item.lower()]
+    if denied:
+        return "\n".join(denied)
+    return "C'est fait.\n" + "\n".join(f"- {item}" for item in observations)
+
+
+def _is_windows() -> bool:
+    import sys
+
+    return sys.platform == "win32"
 
 
 def _short_plan(message: str) -> str:

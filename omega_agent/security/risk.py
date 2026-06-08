@@ -20,7 +20,7 @@ def score_risk(tool_name: str, arguments: dict | None = None) -> RiskAssessment:
     score = 5
     reasons: list[str] = []
 
-    if tool_name in {"write_file", "delete_file", "delete_directory", "move_file", "copy_file", "run_shell", "git_add", "git_commit", "browser_click", "browser_type", "desktop_click", "desktop_type", "desktop_hotkey"}:
+    if tool_name in {"write_file", "append_file", "delete_file", "delete_directory", "move_file", "copy_file", "run_shell", "git_add", "git_commit", "browser_click", "browser_type", "desktop_click", "desktop_type", "desktop_hotkey"}:
         score += 45
         reasons.append("action sensible")
     if tool_name.startswith("browser_"):

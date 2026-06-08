@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 
 from omega_agent.compat import function_tool
 from omega_agent.config import OmegaConfig
 from omega_agent.runtime.project_context import active_config
-from omega_agent.security import confirm, log_action, parse_command, workspace_policy_decision
+from omega_agent.security import confirm, log_action, parse_command, safe_path, workspace_policy_decision
 
 
 def _shell_env(config: OmegaConfig) -> dict[str, str]:
@@ -24,7 +25,10 @@ def _shell_env(config: OmegaConfig) -> dict[str, str]:
     return env
 
 
-def _run_shell(config: OmegaConfig, command: str) -> str:
+def _run_shell(config: OmegaConfig, command: str, cwd: str | None = None, timeout_seconds: int = 60) -> str:
+    workdir = safe_path(config, cwd or ".")
+    if not workdir.exists() or not workdir.is_dir():
+        return f"Commande refusee: cwd introuvable ou non dossier: {cwd or '.'}"
     try:
         args = parse_command(
             command,
@@ -35,23 +39,23 @@ def _run_shell(config: OmegaConfig, command: str) -> str:
         log_action(config, "run_shell_denied", {"command": command, "reason": str(exc)})
         return f"Commande refusee: {exc}"
 
-    decision = workspace_policy_decision(config, "run_shell", {"command": command}, require_approval=config.require_approval)
+    decision = workspace_policy_decision(config, "run_shell", {"command": command, "cwd": cwd or "."}, require_approval=config.require_approval)
     if decision.action == "deny":
         log_action(config, "run_shell_denied", {"command": command, "reason": decision.reason, "risk": decision.risk_level})
         return f"Commande refusee: {decision.reason}"
 
-    if decision.action == "require_approval" and config.require_approval and not confirm(config, f"Executer dans {config.workspace}: {command}"):
+    if decision.action == "require_approval" and config.require_approval and not confirm(config, f"Executer dans {workdir}: {command}"):
         log_action(config, "run_shell_denied", {"command": command, "reason": "user_denied"})
         return "Commande refusee par l'utilisateur."
 
     try:
         result = subprocess.run(
             args,
-            cwd=config.workspace,
+            cwd=workdir,
             env=_shell_env(config),
             capture_output=True,
             text=True,
-            timeout=60,
+            timeout=max(1, min(int(timeout_seconds or 60), 300)),
             check=False,
         )
     except subprocess.TimeoutExpired:
@@ -62,8 +66,11 @@ def _run_shell(config: OmegaConfig, command: str) -> str:
         return f"Commande introuvable sur cette machine: {args[0]}"
 
     log_action(config, "run_shell", {"command": command, "returncode": result.returncode})
-    output = (result.stdout or "") + (result.stderr or "")
-    return output[-12000:] or f"Commande terminee avec code {result.returncode}."
+    stdout = (result.stdout or "")[-10000:]
+    stderr = (result.stderr or "")[-4000:]
+    if stdout and not stderr and result.returncode == 0:
+        return stdout
+    return json.dumps({"exit_code": result.returncode, "stdout": stdout, "stderr": stderr}, ensure_ascii=False)
 
 
 @function_tool

@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from omega_agent.config import OmegaConfig
 from omega_agent.tools.browser import _browser_click, _browser_close, _browser_extract_text, _browser_get_title, _browser_open_url, _browser_screenshot, _browser_type
 from omega_agent.tools.desktop import _desktop_click, _desktop_hotkey, _desktop_locate_text_stub, _desktop_screenshot, _desktop_type
-from omega_agent.tools.files import _copy_file, _create_directory, _delete_directory, _delete_file, _list_files, _list_tree, _move_file, _read_file, _write_file
+from omega_agent.tools.files import _append_file, _copy_file, _create_directory, _delete_directory, _delete_file, _file_exists, _list_files, _list_tree, _move_file, _read_file, _write_file
 from omega_agent.tools.git import git_add, git_commit, git_diff, git_log, git_status
 from omega_agent.tools.memory import _recall, _remember
 from omega_agent.tools.shell import _run_shell
@@ -43,13 +43,15 @@ def list_tools(config: OmegaConfig | None = None) -> list[ToolDefinition]:
         ToolDefinition("list_files", "List files", "Liste les fichiers dans OMEGA_WORKSPACE.", {"type": "object", "properties": {"relative_path": {"type": "string"}}}, "filesystem", "low", True, False),
         ToolDefinition("read_file", "Read file", "Lit un fichier texte non sensible dans OMEGA_WORKSPACE.", {"type": "object", "properties": {"relative_path": {"type": "string"}}}, "filesystem", "medium", True, False),
         ToolDefinition("write_file", "Write file", "Ecrit un fichier dans OMEGA_WORKSPACE.", {"type": "object", "properties": {"relative_path": {"type": "string"}, "content": {"type": "string"}}}, "filesystem", "high", True, write_approval),
+        ToolDefinition("append_file", "Append file", "Ajoute du texte dans un fichier de OMEGA_WORKSPACE.", {"type": "object", "properties": {"relative_path": {"type": "string"}, "content": {"type": "string"}}}, "filesystem", "high", True, write_approval),
         ToolDefinition("delete_file", "Delete file", "Supprime un fichier dans OMEGA_WORKSPACE.", {"type": "object", "properties": {"relative_path": {"type": "string"}}}, "filesystem", "high", delete_enabled, write_approval),
         ToolDefinition("create_directory", "Create directory", "Cree un dossier dans OMEGA_WORKSPACE.", {"type": "object", "properties": {"relative_path": {"type": "string"}}}, "filesystem", "medium", True, write_approval),
         ToolDefinition("delete_directory", "Delete directory", "Supprime un dossier dans OMEGA_WORKSPACE.", {"type": "object", "properties": {"relative_path": {"type": "string"}}}, "filesystem", "high", delete_enabled, write_approval),
         ToolDefinition("move_file", "Move file", "Deplace un fichier dans OMEGA_WORKSPACE.", {"type": "object", "properties": {"source_path": {"type": "string"}, "destination_path": {"type": "string"}}}, "filesystem", "high", True, write_approval),
         ToolDefinition("copy_file", "Copy file", "Copie un fichier dans OMEGA_WORKSPACE.", {"type": "object", "properties": {"source_path": {"type": "string"}, "destination_path": {"type": "string"}}}, "filesystem", "medium", True, write_approval),
         ToolDefinition("list_tree", "List tree", "Liste recursivement un dossier dans OMEGA_WORKSPACE.", {"type": "object", "properties": {"relative_path": {"type": "string"}, "max_entries": {"type": "integer"}}}, "filesystem", "low", True, False),
-        ToolDefinition("run_shell", "Run shell", "Execute une commande allowlistee dans OMEGA_WORKSPACE.", {"type": "object", "properties": {"command": {"type": "string"}}}, "shell", "high", True, shell_approval),
+        ToolDefinition("file_exists", "File exists", "Verifie l'existence d'un fichier dans OMEGA_WORKSPACE.", {"type": "object", "properties": {"relative_path": {"type": "string"}}}, "filesystem", "low", True, False),
+        ToolDefinition("run_shell", "Run shell", "Execute une commande allowlistee dans OMEGA_WORKSPACE.", {"type": "object", "properties": {"command": {"type": "string"}, "cwd": {"type": "string"}, "timeout_seconds": {"type": "integer"}}}, "shell", "high", True, shell_approval),
         ToolDefinition("remember", "Remember", "Ajoute une memoire locale SQLite.", {"type": "object", "properties": {"content": {"type": "string"}, "tags": {"type": "string"}}}, "memory", "low", True, False),
         ToolDefinition("recall", "Recall", "Recherche dans la memoire locale.", {"type": "object", "properties": {"query": {"type": "string"}}}, "memory", "low", True, False),
         ToolDefinition("search_memory", "Search memory", "Alias de recherche memoire.", {"type": "object", "properties": {"query": {"type": "string"}}}, "memory", "low", True, False),
@@ -101,13 +103,15 @@ HANDLERS = {
     "list_files": lambda cfg, args: _list_files(cfg, str(args.get("relative_path", "."))),
     "read_file": lambda cfg, args: _read_file(cfg, str(args.get("relative_path", ""))),
     "write_file": lambda cfg, args: _write_file(cfg, str(args.get("relative_path", "")), str(args.get("content", ""))),
+    "append_file": lambda cfg, args: _append_file(cfg, str(args.get("relative_path", "")), str(args.get("content", ""))),
     "delete_file": lambda cfg, args: _delete_file(cfg, str(args.get("relative_path", ""))),
     "create_directory": lambda cfg, args: _create_directory(cfg, str(args.get("relative_path", ""))),
     "delete_directory": lambda cfg, args: _delete_directory(cfg, str(args.get("relative_path", ""))),
     "move_file": lambda cfg, args: _move_file(cfg, str(args.get("source_path", "")), str(args.get("destination_path", ""))),
     "copy_file": lambda cfg, args: _copy_file(cfg, str(args.get("source_path", "")), str(args.get("destination_path", ""))),
     "list_tree": lambda cfg, args: _list_tree(cfg, str(args.get("relative_path", ".")), int(args.get("max_entries", 200))),
-    "run_shell": lambda cfg, args: _run_shell(cfg, str(args.get("command", ""))),
+    "file_exists": lambda cfg, args: _file_exists(cfg, str(args.get("relative_path", ""))),
+    "run_shell": lambda cfg, args: _run_shell(cfg, str(args.get("command", "")), str(args.get("cwd", ".")), int(args.get("timeout_seconds", 60))),
     "remember": lambda cfg, args: _remember(cfg, str(args.get("content", "")), str(args.get("tags", ""))),
     "recall": lambda cfg, args: _recall(cfg, str(args.get("query", ""))),
     "search_memory": lambda cfg, args: _recall(cfg, str(args.get("query", ""))),

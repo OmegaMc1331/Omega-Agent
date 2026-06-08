@@ -28,6 +28,22 @@ class ToolResult:
     approval_id: str | None = None
 
 
+_WORKSPACE_FULL_ACCESS_TOOLS = {
+    "write_file",
+    "append_file",
+    "delete_file",
+    "create_directory",
+    "delete_directory",
+    "move_file",
+    "copy_file",
+    "list_tree",
+    "file_exists",
+    "run_shell",
+    "git_add",
+    "git_commit",
+}
+
+
 class ToolBroker:
     def __init__(self, config: OmegaConfig):
         self.config = config
@@ -40,6 +56,7 @@ class ToolBroker:
         self.multi_agent = MultiAgentRuntime(config)
 
     def call(self, tool_id: str, arguments: dict, session_id: str | None = None, approval_id: str | None = None) -> ToolResult:
+        arguments = _normalize_tool_arguments(tool_id, dict(arguments or {}))
         tool = self.registry.get(tool_id)
         if tool is None or not tool.enabled:
             return ToolResult("denied", "Tool introuvable ou desactive.")
@@ -63,7 +80,8 @@ class ToolBroker:
         )
         try:
             profile = self.agent_profiles.profile_for_session(session_id)
-            if profile.allowed_tools and tool_id not in profile.allowed_tools:
+            workspace_full_access_tool = self.config.workspace_full_access and tool_id in _WORKSPACE_FULL_ACCESS_TOOLS
+            if profile.allowed_tools and tool_id not in profile.allowed_tools and not workspace_full_access_tool:
                 raise PermissionError(f"Tool non autorise par le profil agent: {tool_id}")
             project = self.projects.project_for_session(session_id)
             project_policy = project.policy
@@ -98,7 +116,7 @@ class ToolBroker:
             and (tool.requires_approval or desktop_action_requires_approval(tool_id))
         )
         require_approval = (tool.requires_approval and active_config.require_approval) or browser_requires_approval or desktop_requires_approval or profile_requires_approval or session_policy_requires_approval
-        if active_config.workspace_full_access and tool_id in {"write_file", "delete_file", "create_directory", "delete_directory", "move_file", "copy_file", "list_tree", "run_shell", "git_add", "git_commit"}:
+        if active_config.workspace_full_access and tool_id in _WORKSPACE_FULL_ACCESS_TOOLS:
             require_approval = False
         decision = workspace_policy_decision(active_config, tool_id, arguments, require_approval=require_approval and approval_id is None)
         if decision.action == "deny":
@@ -206,7 +224,7 @@ def _profile_requires_approval(profile, tool_id: str) -> bool:
     policy = profile.policy
     if policy.get("approval_mode") == "critical":
         return True
-    if policy.get("all_sensitive_requires_approval") and tool_id in {"write_file", "run_shell", "git_diff"}:
+    if policy.get("all_sensitive_requires_approval") and tool_id in {"write_file", "append_file", "run_shell", "git_diff"}:
         return True
     return tool_id in set(policy.get("require_approval_tools") or [])
 
@@ -239,3 +257,17 @@ def _path_inside_workspace(workspace: Path, candidate: Path) -> bool:
         return os.path.commonpath([str(workspace_resolved), str(candidate_resolved)]) == str(workspace_resolved)
     except ValueError:
         return False
+
+
+def _normalize_tool_arguments(tool_id: str, arguments: dict) -> dict:
+    if tool_id in {"list_files", "read_file", "write_file", "append_file", "delete_file", "create_directory", "delete_directory", "list_tree", "file_exists"}:
+        if "relative_path" not in arguments and "path" in arguments:
+            arguments["relative_path"] = arguments["path"]
+    if tool_id in {"move_file", "copy_file"}:
+        if "source_path" not in arguments and "source" in arguments:
+            arguments["source_path"] = arguments["source"]
+        if "destination_path" not in arguments and "destination" in arguments:
+            arguments["destination_path"] = arguments["destination"]
+        if "destination_path" not in arguments and "target" in arguments:
+            arguments["destination_path"] = arguments["target"]
+    return arguments

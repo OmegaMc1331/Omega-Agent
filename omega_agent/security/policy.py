@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from omega_agent.config import OmegaConfig
+from omega_agent.security.sandbox import safe_path
 from omega_agent.security.redaction import redact
 from omega_agent.security.risk import score_risk
 
@@ -42,10 +43,13 @@ BLOCKED_COMMANDS = {
     "chown",
     "shutdown",
     "reboot",
+    "bcdedit",
     "runas",
     "format",
     "diskpart",
     "taskkill",
+    "restart-computer",
+    "stop-computer",
 }
 ALLOWED_COMMANDS = {"pwd", "ls", "dir", "cat", "type", "head", "tail", "pytest", "git"}
 ALLOWED_GIT_SUBCOMMANDS = {"status", "diff", "log", "show"}
@@ -68,9 +72,11 @@ FULL_ACCESS_COMMANDS = {
     "npm",
     "node",
     "python",
+    "py",
     "pip",
     "pytest",
     "uvicorn",
+    "cmd",
     "powershell",
     "pwsh",
 }
@@ -83,23 +89,32 @@ DENIED_COMMAND_FRAGMENTS = (
     "frombase64string",
     "downloadstring",
     "downloadfile",
+    "set-executionpolicy",
     "reg add",
     "reg delete",
     "hkey_local_machine",
     "hklm",
     "shutdown",
+    "restart-computer",
+    "stop-computer",
+    "bcdedit",
     "diskpart",
+    "rm -rf c:\\",
+    "rm -fr c:\\",
+    "del /s /q c:\\",
 )
 WORKSPACE_FULL_ACCESS_TOOLS = {
     "list_files",
     "read_file",
     "write_file",
+    "append_file",
     "delete_file",
     "create_directory",
     "delete_directory",
     "move_file",
     "copy_file",
     "list_tree",
+    "file_exists",
     "run_shell",
     "git_status",
     "git_diff",
@@ -116,6 +131,10 @@ class PolicyDecision:
     risk_level: str = "low"
     redacted_arguments: dict | None = None
 
+    @property
+    def decision(self) -> str:
+        return self.action
+
 
 def _is_sensitive_name(value: str) -> bool:
     lowered = value.lower()
@@ -129,28 +148,6 @@ def _is_sensitive_name(value: str) -> bool:
 def _path_parts(value: str) -> tuple[str, ...]:
     normalized = value.replace("\\", "/")
     return tuple(part for part in PurePosixPath(normalized).parts if part not in {"", "."})
-
-
-def safe_path(config: OmegaConfig, relative_path: str) -> Path:
-    raw_path = (relative_path or ".").strip()
-    if raw_path in {".", "./"}:
-        return config.workspace.resolve()
-    if raw_path.startswith("~") or PureWindowsPath(raw_path).is_absolute() or PurePosixPath(raw_path).is_absolute():
-        raise PermissionError("Acces refuse: le chemin doit etre relatif a OMEGA_WORKSPACE.")
-
-    target = (config.workspace / raw_path).resolve()
-    workspace = config.workspace.resolve()
-    try:
-        inside_workspace = os.path.commonpath([str(workspace), str(target)]) == str(workspace)
-    except ValueError:
-        inside_workspace = False
-    if not inside_workspace:
-        raise PermissionError("Acces refuse: chemin hors OMEGA_WORKSPACE.")
-
-    relative_parts = target.relative_to(workspace).parts
-    if any(_is_sensitive_name(part) for part in relative_parts):
-        raise PermissionError("Acces refuse: chemin sensible.")
-    return target
 
 
 def _validate_shell_arg_scope(arg: str) -> None:
@@ -184,11 +181,17 @@ def parse_command(command: str, *, full_access: bool = False, allow_git_write: b
     if not args:
         raise ValueError("Commande vide.")
     executable = Path(args[0]).name
+    executable = executable.lower()
     if executable in BLOCKED_COMMANDS:
         raise PermissionError(f"Commande bloquee: {executable}")
     allowed_commands = FULL_ACCESS_COMMANDS if full_access else ALLOWED_COMMANDS
     if executable not in allowed_commands:
         raise PermissionError(f"Commande non autorisee: {executable}")
+    if executable == "cmd":
+        if not full_access or len(args) < 3 or args[1].lower() != "/c":
+            raise PermissionError("cmd autorise seulement au format: cmd /c <commande>.")
+        parse_command(" ".join(args[2:]), full_access=full_access, allow_git_write=allow_git_write)
+        return args
     for arg in args[1:]:
         _validate_shell_arg_scope(arg)
     if executable == "git":
@@ -214,12 +217,15 @@ def workspace_policy_decision(config: OmegaConfig, tool_name: str, arguments: di
 
 
 def _validate_workspace_tool_request(config: OmegaConfig, tool_name: str, arguments: dict) -> None:
-    if tool_name in {"list_files", "read_file", "write_file", "delete_file", "create_directory", "delete_directory", "list_tree"}:
+    if tool_name in {"list_files", "read_file", "write_file", "append_file", "delete_file", "create_directory", "delete_directory", "list_tree", "file_exists"}:
         safe_path(config, str(arguments.get("relative_path", ".")))
     elif tool_name in {"move_file", "copy_file"}:
         safe_path(config, str(arguments.get("source_path", "")))
         safe_path(config, str(arguments.get("destination_path", "")))
     elif tool_name == "run_shell":
+        cwd = arguments.get("cwd")
+        if cwd:
+            safe_path(config, str(cwd))
         parse_command(
             str(arguments.get("command", "")),
             full_access=config.workspace_full_access and config.shell_full_access_in_workspace,

@@ -125,6 +125,17 @@ omega config set workspace.allow_delete true
 omega config set workspace.allow_git_write true
 ```
 
+Verifications rapides :
+
+```powershell
+omega doctor
+omega workspace doctor
+omega tools test write-file
+omega tools test shell
+```
+
+En mode actif, une demande comme "Cree hello.txt avec le texte Bonjour" utilise les tools Omega et cree reellement le fichier dans le workspace sans approval. Une demande hors workspace, par exemple vers `C:\Users\<user>\Desktop`, est refusee directement sans proposer d'approval.
+
 ## Commandes
 
 ```powershell
@@ -135,6 +146,9 @@ omega chat
 omega doctor
 omega ui dev
 omega tools list
+omega tools test write-file
+omega tools test shell
+omega workspace doctor
 omega models status
 omega models list
 omega models set codex/gpt-5.5

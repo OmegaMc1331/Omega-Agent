@@ -11,10 +11,10 @@ DEFAULT_AGENT_PROFILE_ID = "omega-core"
 BUILTIN_PROFILE_IDS = {"omega-core", "omega-coder", "omega-research", "omega-security", "omega-operator"}
 
 LOW_MEDIUM_TOOLS = ["list_files", "read_file", "remember", "recall", "search_memory", "git_status", "git_log", "system_info", "delegate_to_agent"]
-CODER_TOOLS = ["read_file", "write_file", "delete_file", "create_directory", "delete_directory", "move_file", "copy_file", "list_tree", "git_status", "git_diff", "git_log", "git_add", "git_commit", "run_shell"]
+CODER_TOOLS = ["read_file", "write_file", "append_file", "delete_file", "create_directory", "delete_directory", "move_file", "copy_file", "list_tree", "file_exists", "git_status", "git_diff", "git_log", "git_add", "git_commit", "run_shell"]
 RESEARCH_TOOLS = ["read_file", "remember", "recall", "search_memory", "system_info"]
 SECURITY_TOOLS = ["list_files", "read_file", "git_status", "git_diff", "git_log"]
-OPERATOR_TOOLS = ["list_files", "read_file", "write_file", "delete_file", "create_directory", "delete_directory", "move_file", "copy_file", "list_tree", "run_shell", "remember", "recall", "search_memory"]
+OPERATOR_TOOLS = ["list_files", "read_file", "write_file", "append_file", "delete_file", "create_directory", "delete_directory", "move_file", "copy_file", "list_tree", "file_exists", "run_shell", "remember", "recall", "search_memory"]
 BROWSER_TOOLS = ["browser_open_url", "browser_get_title", "browser_screenshot", "browser_click", "browser_type", "browser_extract_text", "browser_close"]
 DESKTOP_TOOLS = ["desktop_screenshot", "desktop_locate_text_stub", "desktop_click", "desktop_type", "desktop_hotkey"]
 

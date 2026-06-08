@@ -4,6 +4,7 @@ import pytest
 
 from omega_agent.config import OmegaConfig
 from omega_agent.security import log_action, parse_command, safe_path
+from omega_agent.security.sandbox import assert_inside_workspace, is_path_inside_workspace, resolve_workspace_path
 
 
 def test_safe_path_rejects_traversal(tmp_path: Path):
@@ -15,6 +16,14 @@ def test_safe_path_rejects_traversal(tmp_path: Path):
 def test_safe_path_allows_workspace_file(tmp_path: Path):
     cfg = OmegaConfig(model="test", workspace=tmp_path, require_approval=False)
     assert safe_path(cfg, "notes/a.txt") == (tmp_path / "notes" / "a.txt").resolve()
+
+
+def test_sandbox_accepts_absolute_path_inside_workspace(tmp_path: Path):
+    target = (tmp_path / "notes" / "a.txt").resolve()
+    resolved = resolve_workspace_path(str(target), tmp_path)
+
+    assert is_path_inside_workspace(resolved, tmp_path)
+    assert assert_inside_workspace(resolved, tmp_path) == target
 
 
 @pytest.mark.parametrize(

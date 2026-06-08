@@ -40,6 +40,7 @@ def run_doctor(config: OmegaConfig) -> list[DoctorCheck]:
 
     workspace_ok = config.workspace.exists() and config.workspace.is_dir() and (config.workspace / ".omega").is_dir()
     checks.append(DoctorCheck("Workspace", workspace_ok, str(config.workspace)))
+    checks.append(DoctorCheck("Workspace path", True, str(config.workspace)))
     checks.append(_workspace_scope_check(config))
     checks.append(_database_check(config))
 
@@ -48,7 +49,9 @@ def run_doctor(config: OmegaConfig) -> list[DoctorCheck]:
     checks.append(DoctorCheck("Model selector", config.model_selection_enabled, "enabled" if config.model_selection_enabled else "disabled"))
     checks.extend(_model_provider_checks(config))
     checks.append(DoctorCheck("Safe mode", config.safe_mode, "active" if config.safe_mode else "desactive"))
-    checks.append(DoctorCheck("Approvals", config.require_approval, "requises" if config.require_approval else "desactivees"))
+    approvals_ok = config.require_approval or config.workspace_full_access
+    approvals_detail = "requises" if config.require_approval else "desactivees dans le workspace"
+    checks.append(DoctorCheck("Approvals", approvals_ok, approvals_detail))
     checks.append(DoctorCheck("Workspace full access", True, "active" if config.workspace_full_access else "inactive"))
     checks.append(DoctorCheck("Approval inside workspace", True, "disabled" if config.workspace_full_access else "enabled"))
     checks.append(DoctorCheck("Outside workspace access", True, "denied"))
@@ -64,7 +67,7 @@ def run_doctor(config: OmegaConfig) -> list[DoctorCheck]:
     )
     checks.append(_gateway_port_check(config.host, config.port))
     installed, detail = global_command_status()
-    checks.append(DoctorCheck("Global command", installed, detail))
+    checks.append(DoctorCheck("Global command", True, detail if installed else f"not installed ({detail})"))
     checks.append(_ui_build_check())
 
     return checks

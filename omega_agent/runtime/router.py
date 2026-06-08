@@ -2,8 +2,33 @@ from __future__ import annotations
 
 from omega_agent.runtime.agent_profiles import DEFAULT_AGENT_PROFILE_ID
 
-CODER_KEYWORDS = {"code", "repo", "repository", "tests", "test", "bug", "pytest", "developpement", "développement"}
-SECURITY_KEYWORDS = {"audit", "securite", "sécurité", "vulnerabilite", "vulnérabilité", "vulnerability", "secret", "cve"}
+CODER_KEYWORDS = {
+    "code",
+    "repo",
+    "repository",
+    "tests",
+    "test",
+    "bug",
+    "pytest",
+    "developpement",
+    "fichier",
+    "file",
+    "cree",
+    "creer",
+    "crée",
+    "créer",
+    "modifie",
+    "modifier",
+    "supprime",
+    "supprimer",
+    "dossier",
+    "commande",
+    "shell",
+    "build",
+    "npm",
+    "python",
+}
+SECURITY_KEYWORDS = {"audit", "securite", "sécurité", "vulnerabilite", "vulnerability", "secret", "cve"}
 OPERATOR_KEYWORDS = {"automatiser", "automate", "ouvrir", "cliquer", "click", "desktop", "browser"}
 
 
@@ -14,7 +39,7 @@ def choose_agent_profile(message: str, current_profile_id: str | None = None, ma
         return current_profile_id
 
     lowered = message.lower()
-    words = set(lowered.replace(",", " ").replace(".", " ").split())
+    words = set(lowered.replace(",", " ").replace(".", " ").replace(":", " ").split())
     if words.intersection(CODER_KEYWORDS):
         return "omega-coder"
     if words.intersection(SECURITY_KEYWORDS):

@@ -32,6 +32,7 @@ from .runtime.model_selector import ModelSelector
 from .runtime.plugins_registry import PluginsRegistry
 from .runtime.settings import SettingsStore
 from .runtime.skills_registry import SkillsRegistry
+from .runtime.tool_broker import ToolBroker
 from .runtime.tools_registry import list_tools
 from .security.audit import apply_safe_fixes, run_security_audit
 from .tools.memory import _recall
@@ -135,6 +136,11 @@ def run() -> None:
     tools_parser = subparsers.add_parser("tools")
     tools_subparsers = tools_parser.add_subparsers(dest="tools_command")
     tools_subparsers.add_parser("list")
+    tools_test = tools_subparsers.add_parser("test")
+    tools_test.add_argument("test_name", choices=["write-file", "shell"])
+    workspace_parser = subparsers.add_parser("workspace")
+    workspace_subparsers = workspace_parser.add_subparsers(dest="workspace_command")
+    workspace_subparsers.add_parser("doctor")
     models_parser = subparsers.add_parser("models")
     models_subparsers = models_parser.add_subparsers(dest="models_command")
     models_subparsers.add_parser("list")
@@ -211,6 +217,8 @@ def run() -> None:
         raise SystemExit(plugins_command(args))
     if args.command == "tools":
         raise SystemExit(tools_command(args))
+    if args.command == "workspace":
+        raise SystemExit(workspace_command(args))
     if args.command == "models":
         raise SystemExit(models_command(args))
     if args.command == "jobs":
@@ -239,7 +247,7 @@ def run() -> None:
             console.print(f"[red]{exc}[/red]")
             raise SystemExit(1) from exc
         return
-    console.print("Commande inconnue. Commandes: serve, chat, doctor, ui, skills, plugins, tools, security")
+    console.print("Commande inconnue. Commandes: serve, chat, doctor, ui, skills, plugins, tools, workspace, security")
     raise SystemExit(2)
 
 
@@ -289,8 +297,65 @@ def tools_command(args: argparse.Namespace) -> int:
             marker = "approval" if tool.requires_approval else "direct"
             console.print(f"{tool.id} ({tool.risk}/{marker}) {tool.description}")
         return 0
-    console.print("Commandes: omega tools list")
+    if args.tools_command == "test":
+        config = OmegaConfig.from_env()
+        broker = ToolBroker(config)
+        if args.test_name == "write-file":
+            result = broker.call("write_file", {"relative_path": ".omega-tool-test.txt", "content": "Omega tool test\n"})
+            target = config.workspace / ".omega-tool-test.txt"
+            if result.status != "completed" or not target.exists():
+                console.print(f"[red]FAIL[/red] write_file: {result.output}")
+                return 1
+            if config.allow_delete_in_workspace:
+                delete_result = broker.call("delete_file", {"relative_path": ".omega-tool-test.txt"})
+                if delete_result.status != "completed" or target.exists():
+                    console.print(f"[red]FAIL[/red] delete_file: {delete_result.output}")
+                    return 1
+            console.print("[green]OK[/green] write-file")
+            return 0
+        if args.test_name == "shell":
+            command = "cmd /c dir" if sys.platform == "win32" else "ls"
+            result = broker.call("run_shell", {"command": command})
+            if result.status != "completed":
+                console.print(f"[red]FAIL[/red] shell: {result.output}")
+                return 1
+            console.print("[green]OK[/green] shell")
+            console.print(result.output[:1000])
+            return 0
+    console.print("Commandes: omega tools list|test write-file|test shell")
     return 2
+
+
+def workspace_command(args: argparse.Namespace) -> int:
+    config = OmegaConfig.from_env()
+    if args.workspace_command == "doctor":
+        checks = [
+            ("Workspace exists", config.workspace.exists() and config.workspace.is_dir(), str(config.workspace)),
+            ("Workspace writable", _workspace_writable(config), str(config.workspace)),
+            ("Workspace full access", config.workspace_full_access, "active" if config.workspace_full_access else "inactive"),
+            ("Approval inside workspace", True, "disabled" if config.workspace_full_access else "enabled"),
+            ("Outside workspace", True, "denied"),
+            ("Shell inside workspace", config.shell_full_access_in_workspace, "enabled" if config.shell_full_access_in_workspace else "disabled"),
+            ("Delete inside workspace", config.allow_delete_in_workspace, "enabled" if config.allow_delete_in_workspace else "disabled"),
+        ]
+        failed = False
+        for name, ok, detail in checks:
+            console.print(f"{'OK' if ok else 'FAIL'} {name}: {detail}")
+            failed = failed or not ok
+        return 1 if failed else 0
+    console.print("Commandes: omega workspace doctor")
+    return 2
+
+
+def _workspace_writable(config: OmegaConfig) -> bool:
+    try:
+        config.ensure_dirs()
+        target = config.workspace / ".omega-workspace-doctor.tmp"
+        target.write_text("ok", encoding="utf-8")
+        target.unlink(missing_ok=True)
+        return True
+    except OSError:
+        return False
 
 
 def models_command(args: argparse.Namespace) -> int:

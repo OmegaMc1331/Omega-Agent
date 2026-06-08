@@ -10,7 +10,7 @@ from omega_agent.config import OmegaConfig
 from omega_agent.security.policy import SENSITIVE_FILE_NAMES, SENSITIVE_PARTS, _is_sensitive_name, parse_command
 
 
-FILESYSTEM_TOOLS = {"list_files", "read_file", "write_file", "delete_file", "create_directory", "delete_directory", "move_file", "copy_file", "list_tree"}
+FILESYSTEM_TOOLS = {"list_files", "read_file", "write_file", "append_file", "delete_file", "create_directory", "delete_directory", "move_file", "copy_file", "list_tree", "file_exists"}
 SHELL_TOOLS = {"run_shell", "git_status", "git_diff", "git_log", "git_add", "git_commit"}
 BROWSER_TOOLS = {
     "browser",
@@ -134,9 +134,9 @@ def validate_project_tool(tool_id: str, arguments: dict, root_path: str | Path, 
         raise PermissionError("Acces reseau refuse par la politique projet.")
     if tool_id in BROWSER_TOOLS and not policy.browser_allowed:
         raise PermissionError("Acces navigateur refuse par la politique projet.")
-    if tool_id in {"list_files", "read_file", "list_tree"}:
+    if tool_id in {"list_files", "read_file", "list_tree", "file_exists"}:
         safe_project_path(root_path, str(arguments.get("relative_path", ".")), policy, mode="read")
-    if tool_id in {"write_file", "delete_file", "create_directory", "delete_directory"}:
+    if tool_id in {"write_file", "append_file", "delete_file", "create_directory", "delete_directory"}:
         safe_project_path(root_path, str(arguments.get("relative_path", "")), policy, mode="write")
     if tool_id in {"move_file", "copy_file"}:
         safe_project_path(root_path, str(arguments.get("source_path", "")), policy, mode="read")
