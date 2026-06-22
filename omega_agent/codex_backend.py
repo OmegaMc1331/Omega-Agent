@@ -80,9 +80,35 @@ def ensure_codex_ready(config: OmegaConfig | None = None, *, force_auth_check: b
     return None
 
 
-def build_codex_prompt(history: list[dict[str, str]], user_input: str) -> str:
+def effective_codex_sandbox_mode(config: OmegaConfig) -> str:
+    if config.workspace_full_access:
+        return "workspace-write"
+    return config.codex_sandbox_mode
+
+
+def effective_codex_approval_policy(config: OmegaConfig) -> str:
+    if config.workspace_full_access:
+        return "never"
+    return config.codex_approval_policy
+
+
+def build_codex_prompt(history: list[dict[str, str]], user_input: str, config: OmegaConfig | None = None) -> str:
     recent_history = history[-12:]
     transcript = "\n".join(f"{item['role']}: {item['content']}" for item in recent_history)
+    if config is not None and config.workspace_full_access:
+        workspace_permissions = f"""
+- Le Workspace Full Access Omega est actif pour {config.workspace}.
+- Tu peux créer, modifier et supprimer des fichiers dans ce workspace quand la policy Omega l'autorise.
+- Tu ne peux jamais écrire hors de ce workspace.
+- Les actions restent soumises aux tools, aux limites de risque et aux policies Omega.
+- Ne prétends pas être bloqué en lecture seule si une action workspace-safe est autorisée.
+""".strip()
+    else:
+        workspace_permissions = """
+- Respecte le sandbox et les approvals configurés par Omega.
+- Tu ne peux jamais écrire hors du workspace Omega.
+- Les actions restent soumises aux tools, aux limites de risque et aux policies Omega.
+""".strip()
     return f"""
 Tu es Omega Agent, l'agent IA personnel local-first d'Alexandre.
 
@@ -101,6 +127,7 @@ SÉCURITÉ:
 - Ne lis pas de secrets, clés SSH, tokens, mots de passe ou fichiers navigateur.
 - Ne modifie pas de fichiers et n'exécute pas de commandes shell sans approval si la policy l'exige.
 - Présente ces limites comme des règles Omega Agent, pas comme des limites d'un provider.
+{workspace_permissions}
 
 Historique récent:
 {transcript}
@@ -125,7 +152,9 @@ def run_codex_turn(config: OmegaConfig, history: list[dict[str, str]], user_inpu
     if not executable:
         return "Codex CLI introuvable."
 
-    prompt = build_codex_prompt(history, user_input)
+    sandbox_mode = effective_codex_sandbox_mode(config)
+    approval_policy = effective_codex_approval_policy(config)
+    prompt = build_codex_prompt(history, user_input, config)
     command = [
         executable,
         "exec",
@@ -134,7 +163,9 @@ def run_codex_turn(config: OmegaConfig, history: list[dict[str, str]], user_inpu
         "--cd",
         str(config.workspace),
         "--sandbox",
-        "read-only",
+        sandbox_mode,
+        "--ask-for-approval",
+        approval_policy,
         "--ephemeral",
         "--ignore-user-config",
         "--ignore-rules",
@@ -157,7 +188,16 @@ def run_codex_turn(config: OmegaConfig, history: list[dict[str, str]], user_inpu
         timeout=300,
         check=False,
     )
-    log_action(config, "codex_exec", {"model": config.model, "returncode": result.returncode})
+    log_action(
+        config,
+        "codex_exec",
+        {
+            "model": config.model,
+            "returncode": result.returncode,
+            "sandbox_mode": sandbox_mode,
+            "approval_policy": approval_policy,
+        },
+    )
 
     if output_file.exists():
         output = output_file.read_text(encoding="utf-8", errors="replace").strip()

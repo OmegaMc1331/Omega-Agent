@@ -841,13 +841,17 @@ def tools_command(args: argparse.Namespace) -> int:
 
 def workspace_command(args: argparse.Namespace) -> int:
     from .config import OmegaConfig
+    from .doctor import run_workspace_write_test
 
     config = OmegaConfig.from_env()
     if args.workspace_command == "doctor":
+        write_test = run_workspace_write_test(config)
         checks = [
             ("Workspace exists", config.workspace.exists() and config.workspace.is_dir(), str(config.workspace)),
-            ("Workspace writable", _workspace_writable(config), str(config.workspace)),
+            (write_test.name, write_test.ok, write_test.detail),
             ("Workspace full access", config.workspace_full_access, "active" if config.workspace_full_access else "inactive"),
+            ("Codex sandbox mode", config.codex_sandbox_mode == "workspace-write" if config.workspace_full_access else True, config.codex_sandbox_mode),
+            ("Codex approval policy", True, config.codex_approval_policy),
             ("Approval inside workspace", True, "disabled" if config.workspace_full_access else "enabled"),
             ("Outside workspace", True, "denied"),
             ("Shell inside workspace", config.shell_full_access_in_workspace, "enabled" if config.shell_full_access_in_workspace else "disabled"),
@@ -914,17 +918,6 @@ def _print_tailscale_result(result) -> int:
     if result.ok:
         console.print("Mobile: Tailscale Serve reste limite au tailnet. N'active pas Funnel sauf confirmation explicite.")
     return 0 if result.ok else 1
-
-
-def _workspace_writable(config: OmegaConfig) -> bool:
-    try:
-        config.ensure_dirs()
-        target = config.workspace / ".omega-workspace-doctor.tmp"
-        target.write_text("ok", encoding="utf-8")
-        target.unlink(missing_ok=True)
-        return True
-    except OSError:
-        return False
 
 
 def models_command(args: argparse.Namespace) -> int:

@@ -47,6 +47,10 @@ def default_config() -> dict[str, Any]:
             "allow_delete": True,
             "allow_git_write": True,
         },
+        "codex": {
+            "sandbox_mode": "workspace-write",
+            "approval_policy": "never",
+        },
         "model": {
             "selection_enabled": True,
             "default": "codex/gpt-5.5",
@@ -266,6 +270,8 @@ ENV_TO_CONFIG_PATH = {
     "OMEGA_SHELL_FULL_ACCESS_IN_WORKSPACE": "workspace.shell_full_access",
     "OMEGA_ALLOW_DELETE_IN_WORKSPACE": "workspace.allow_delete",
     "OMEGA_ALLOW_GIT_WRITE_IN_WORKSPACE": "workspace.allow_git_write",
+    "OMEGA_CODEX_SANDBOX_MODE": "codex.sandbox_mode",
+    "OMEGA_CODEX_APPROVAL_POLICY": "codex.approval_policy",
     "OMEGA_DEFAULT_MODEL": "model.default",
     "OMEGA_FALLBACK_MODEL": "model.fallback",
     "OMEGA_MODEL_SELECTION_ENABLED": "model.selection_enabled",

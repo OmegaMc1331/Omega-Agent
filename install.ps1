@@ -107,6 +107,27 @@ function Set-EnvValue([string]$Path, [string]$Key, [string]$Value) {
     Set-Content -LiteralPath $Path -Value $lines -Encoding UTF8
 }
 
+function Ensure-ConfigObject([object]$Parent, [string]$Name, [ref]$Changed) {
+    $property = $Parent.PSObject.Properties[$Name]
+    if ($null -eq $property) {
+        $value = [pscustomobject]@{}
+        $Parent | Add-Member -NotePropertyName $Name -NotePropertyValue $value
+        $Changed.Value = $true
+        return $value
+    }
+    if ($null -eq $property.Value -or -not ($property.Value -is [System.Management.Automation.PSCustomObject])) {
+        throw "config.json invalide: '$Name' doit etre un objet."
+    }
+    return $property.Value
+}
+
+function Add-MissingConfigValue([object]$Parent, [string]$Name, [object]$Value, [ref]$Changed) {
+    if ($null -eq $Parent.PSObject.Properties[$Name]) {
+        $Parent | Add-Member -NotePropertyName $Name -NotePropertyValue $Value
+        $Changed.Value = $true
+    }
+}
+
 function Configure-OmegaConfig([string]$Root, [string]$Workspace, [bool]$OpenBrowser) {
     $omegaHome = Join-Path $HOME ".omega"
     New-Item -ItemType Directory -Path $Workspace -Force | Out-Null
@@ -114,8 +135,34 @@ function Configure-OmegaConfig([string]$Root, [string]$Workspace, [bool]$OpenBro
     New-Item -ItemType Directory -Path (Join-Path $HOME "omega_skills") -Force | Out-Null
     New-Item -ItemType Directory -Path (Join-Path $HOME "omega_plugins") -Force | Out-Null
     $configPath = Join-Path $omegaHome "config.json"
-    if ((Test-Path -LiteralPath $configPath) -and -not $Force) {
-        Write-Warn "config.json existe deja; il n'est pas ecrase: $configPath"
+    if (Test-Path -LiteralPath $configPath) {
+        try {
+            $config = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
+        } catch {
+            throw "config.json existant invalide; aucune modification effectuee: $configPath"
+        }
+        $changed = $false
+        $workspaceConfig = Ensure-ConfigObject $config "workspace" ([ref]$changed)
+        Add-MissingConfigValue $workspaceConfig "path" $Workspace ([ref]$changed)
+        Add-MissingConfigValue $workspaceConfig "full_access" $true ([ref]$changed)
+        Add-MissingConfigValue $workspaceConfig "require_approval" $false ([ref]$changed)
+        Add-MissingConfigValue $workspaceConfig "require_approval_outside_workspace" $true ([ref]$changed)
+        Add-MissingConfigValue $workspaceConfig "shell_full_access" $true ([ref]$changed)
+        Add-MissingConfigValue $workspaceConfig "allow_delete" $true ([ref]$changed)
+        Add-MissingConfigValue $workspaceConfig "allow_git_write" $true ([ref]$changed)
+        $codexConfig = Ensure-ConfigObject $config "codex" ([ref]$changed)
+        Add-MissingConfigValue $codexConfig "sandbox_mode" "workspace-write" ([ref]$changed)
+        $approvalPolicy = if ($workspaceConfig.full_access -eq $true) { "never" } else { "on-request" }
+        Add-MissingConfigValue $codexConfig "approval_policy" $approvalPolicy ([ref]$changed)
+        if ($changed) {
+            $backupPath = "$configPath.backup-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+            Copy-Item -LiteralPath $configPath -Destination $backupPath
+            $json = $config | ConvertTo-Json -Depth 12
+            [System.IO.File]::WriteAllText($configPath, $json + [Environment]::NewLine, [System.Text.UTF8Encoding]::new($false))
+            Write-Ok "config.json complete; backup: $backupPath"
+        } else {
+            Write-Ok "config.json deja complet: $configPath"
+        }
         return
     }
     $config = [ordered]@{
@@ -131,6 +178,10 @@ function Configure-OmegaConfig([string]$Root, [string]$Workspace, [bool]$OpenBro
             shell_full_access = $true
             allow_delete = $true
             allow_git_write = $true
+        }
+        codex = [ordered]@{
+            sandbox_mode = "workspace-write"
+            approval_policy = "never"
         }
         model = [ordered]@{ selection_enabled = $true; default = "codex/gpt-5.5"; fallback = $null; auth_cache_seconds = 300; status_cache_seconds = 60 }
         providers = [ordered]@{
@@ -273,6 +324,7 @@ $omegaExe = Join-Path $InstallDir ".venv\Scripts\omega.exe"
 if (Test-Path -LiteralPath $omegaExe) {
     & $omegaExe config doctor
     & $omegaExe doctor
+    & $omegaExe workspace doctor
 } else {
     & powershell -ExecutionPolicy Bypass -File (Join-Path $InstallDir "scripts\doctor-install.ps1") -InstallDir $InstallDir -WorkspaceDir $WorkspaceDir
 }

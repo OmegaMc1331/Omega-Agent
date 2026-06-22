@@ -8,7 +8,12 @@ from pathlib import Path
 from urllib.error import URLError
 from urllib.request import urlopen
 
-from .codex_backend import codex_login_status, codex_version
+from .codex_backend import (
+    codex_login_status,
+    codex_version,
+    effective_codex_approval_policy,
+    effective_codex_sandbox_mode,
+)
 from .config import OmegaConfig
 from .powershell_profile import global_command_status
 from .runtime.model_selector import ModelSelector
@@ -37,11 +42,28 @@ def run_doctor(config: OmegaConfig) -> list[DoctorCheck]:
 
     codex_ok, codex_status = codex_login_status()
     checks.append(DoctorCheck("Auth Codex", codex_ok, codex_status or "Lance : codex login"))
+    sandbox_mode = effective_codex_sandbox_mode(config)
+    approval_policy = effective_codex_approval_policy(config)
+    checks.append(
+        DoctorCheck(
+            "Codex sandbox mode",
+            sandbox_mode in {"read-only", "workspace-write"} and not (config.workspace_full_access and sandbox_mode == "read-only"),
+            f"configured={config.codex_sandbox_mode}; effective={sandbox_mode}",
+        )
+    )
+    checks.append(
+        DoctorCheck(
+            "Codex approval policy",
+            approval_policy in {"never", "on-request"},
+            approval_policy,
+        )
+    )
 
     workspace_ok = config.workspace.exists() and config.workspace.is_dir() and (config.workspace / ".omega").is_dir()
     checks.append(DoctorCheck("Workspace", workspace_ok, str(config.workspace)))
     checks.append(DoctorCheck("Workspace path", True, str(config.workspace)))
     checks.append(_workspace_scope_check(config))
+    checks.append(run_workspace_write_test(config))
     checks.append(_database_check(config))
 
     checks.append(DoctorCheck("Default model", bool(config.default_model_ref), config.default_model_ref))
@@ -109,6 +131,30 @@ def _workspace_scope_check(config: OmegaConfig) -> DoctorCheck:
     except PermissionError as exc:
         return DoctorCheck("Workspace scope", False, str(exc))
     return DoctorCheck("Workspace scope", True, "sandbox relatif actif")
+
+
+def run_workspace_write_test(config: OmegaConfig) -> DoctorCheck:
+    target: Path | None = None
+    created = False
+    try:
+        config.ensure_dirs()
+        target = safe_path(config, ".omega-write-test")
+        with target.open("x", encoding="utf-8") as handle:
+            handle.write("OK")
+        created = True
+        if target.read_text(encoding="utf-8") != "OK":
+            return DoctorCheck("Workspace write test", False, "FAIL: contenu relu invalide")
+        target.unlink()
+        created = False
+        return DoctorCheck("Workspace write test", True, f"PASS: {target}")
+    except Exception as exc:
+        return DoctorCheck("Workspace write test", False, f"FAIL: {exc}")
+    finally:
+        if created and target is not None:
+            try:
+                target.unlink(missing_ok=True)
+            except OSError:
+                pass
 
 
 def _database_check(config: OmegaConfig) -> DoctorCheck:

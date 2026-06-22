@@ -105,6 +105,8 @@ omega config get model.default
 omega config set model.default codex/gpt-5.5
 omega config set gateway.port 8765
 omega config set workspace.full_access true
+omega config set codex.sandbox_mode workspace-write
+omega config set codex.approval_policy never
 omega config migrate-env
 omega config doctor
 ```
@@ -612,7 +614,7 @@ Optimisations actives par defaut :
 - Tools, skills et plugins sont charges au startup et peuvent etre recharges manuellement via `POST /api/registries/reload` ou le bouton Settings.
 - Contexte borne par `OMEGA_MAX_HISTORY_MESSAGES`, `OMEGA_MAX_MEMORY_RESULTS`, `OMEGA_MAX_SKILLS_IN_CONTEXT` et `OMEGA_MAX_TOOL_DESCRIPTIONS`.
 - `OMEGA_REASONING_DETAIL=minimal` limite le stream visible aux grandes etapes et events indispensables.
-- `OMEGA_CODEX_MODE=exec` documente le mode actuel : Omega lance `codex exec` pour chaque tour, avec timeout subprocess, sandbox read-only et workspace scope. Le cout de demarrage est mesure dans les traces.
+- `OMEGA_CODEX_MODE=exec` documente le mode actuel : Omega lance `codex exec` pour chaque tour, avec timeout subprocess et workspace scope. Avec `workspace.full_access=true`, Omega impose `codex.sandbox_mode=workspace-write` et `codex.approval_policy=never`; les écritures hors workspace restent refusées.
 
 Les traces recentes sont exposees par `GET /api/performance/recent`, journalisees dans `/api/events` sous `performance.chat_trace`, et visibles dans Settings.
 

@@ -123,3 +123,16 @@ def test_config_strips_workspace_env_value(tmp_path: Path, monkeypatch: pytest.M
     cfg = OmegaConfig.from_env()
 
     assert cfg.workspace == tmp_path.resolve()
+
+
+def test_codex_approval_defaults_to_on_request_without_full_access(tmp_path: Path):
+    cfg = OmegaConfig(
+        model="gpt-5.5",
+        workspace=tmp_path,
+        require_approval=True,
+        workspace_full_access=False,
+        codex_approval_policy="never",
+    )
+
+    assert cfg.codex_sandbox_mode == "workspace-write"
+    assert cfg.codex_approval_policy == "on-request"

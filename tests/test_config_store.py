@@ -32,6 +32,10 @@ def test_config_json_created_if_absent(tmp_path: Path, monkeypatch):
     assert path == target.resolve()
     assert target.exists()
     assert json.loads(target.read_text(encoding="utf-8"))["model"]["default"] == "codex/gpt-5.5"
+    assert json.loads(target.read_text(encoding="utf-8"))["codex"] == {
+        "sandbox_mode": "workspace-write",
+        "approval_policy": "never",
+    }
 
 
 def test_load_config_accepts_utf8_bom(tmp_path: Path):

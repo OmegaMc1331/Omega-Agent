@@ -153,6 +153,8 @@ class OmegaConfig:
     reload_skills_per_message: bool = False
     load_plugins_on_startup: bool = True
     codex_mode: str = "exec"
+    codex_sandbox_mode: str = "workspace-write"
+    codex_approval_policy: str = ""
     default_model_ref: str = "codex/gpt-5.5"
     fallback_model_ref: str = ""
     model_selection_enabled: bool = True
@@ -178,6 +180,17 @@ class OmegaConfig:
     config_status: str = "defaults"
     model_config_source: str = "defaults"
     legacy_env_present: bool = False
+
+    def __post_init__(self) -> None:
+        sandbox_mode = _parse_codex_sandbox_mode(self.codex_sandbox_mode)
+        if self.workspace_full_access and sandbox_mode == "read-only":
+            sandbox_mode = "workspace-write"
+        configured_approval = self.codex_approval_policy.strip().lower()
+        if configured_approval:
+            _parse_codex_approval_policy(configured_approval)
+        approval_policy = "never" if self.workspace_full_access else "on-request"
+        object.__setattr__(self, "codex_sandbox_mode", sandbox_mode)
+        object.__setattr__(self, "codex_approval_policy", approval_policy)
 
     def ensure_dirs(self) -> None:
         self.workspace.mkdir(parents=True, exist_ok=True)
@@ -205,6 +218,18 @@ class OmegaConfig:
         workspace = Path(source.get("OMEGA_WORKSPACE", "~/omega_workspace", "workspace.path").strip()).expanduser().resolve()
         _validate_workspace_root(workspace)
 
+        workspace_full_access = _parse_bool(source.get("OMEGA_WORKSPACE_FULL_ACCESS", "false", "workspace.full_access"))
+        codex_sandbox_mode = _parse_codex_sandbox_mode(
+            source.get("OMEGA_CODEX_SANDBOX_MODE", "workspace-write", "codex.sandbox_mode")
+        )
+        codex_approval_policy = _parse_codex_approval_policy(
+            source.get(
+                "OMEGA_CODEX_APPROVAL_POLICY",
+                "never" if workspace_full_access else "on-request",
+                "codex.approval_policy",
+            )
+        )
+
         cfg = cls(
             model=selected_model,
             workspace=workspace,
@@ -219,7 +244,7 @@ class OmegaConfig:
             plugins_dir=Path(source.get("OMEGA_PLUGINS_DIR", "~/omega_plugins", "paths.plugins_dir").strip()).expanduser().resolve(),
             db_path=Path(source.get("OMEGA_DB_PATH", "~/.omega/omega.db", "paths.db_path").strip()).expanduser().resolve(),
             safe_mode=_parse_bool(source.get("OMEGA_SAFE_MODE", "true")),
-            workspace_full_access=_parse_bool(source.get("OMEGA_WORKSPACE_FULL_ACCESS", "false", "workspace.full_access")),
+            workspace_full_access=workspace_full_access,
             require_approval_outside_workspace=_parse_bool(source.get("OMEGA_REQUIRE_APPROVAL_OUTSIDE_WORKSPACE", "true", "workspace.require_approval_outside_workspace")),
             shell_full_access_in_workspace=_parse_bool(source.get("OMEGA_SHELL_FULL_ACCESS_IN_WORKSPACE", "false", "workspace.shell_full_access")),
             allow_delete_in_workspace=_parse_bool(source.get("OMEGA_ALLOW_DELETE_IN_WORKSPACE", "false", "workspace.allow_delete")),
@@ -346,6 +371,8 @@ class OmegaConfig:
             reload_skills_per_message=_parse_bool(source.get("OMEGA_RELOAD_SKILLS_PER_MESSAGE", "false", "performance.reload_skills_per_message")),
             load_plugins_on_startup=_parse_bool(source.get("OMEGA_LOAD_PLUGINS_ON_STARTUP", "true", "performance.load_plugins_on_startup")),
             codex_mode=source.get("OMEGA_CODEX_MODE", "exec").strip().lower() or "exec",
+            codex_sandbox_mode=codex_sandbox_mode,
+            codex_approval_policy=codex_approval_policy,
             default_model_ref=default_model_ref,
             fallback_model_ref=fallback_model_ref,
             model_selection_enabled=model_selection_enabled,
@@ -456,6 +483,20 @@ def _parse_mobile_mode(value: str) -> str:
     if mode not in {"tailscale", "off"}:
         raise ValueError("mobile.mode doit valoir tailscale ou off.")
     return mode
+
+
+def _parse_codex_sandbox_mode(value: str) -> str:
+    mode = value.strip().lower() or "workspace-write"
+    if mode not in {"read-only", "workspace-write"}:
+        raise ValueError("codex.sandbox_mode doit valoir read-only ou workspace-write.")
+    return mode
+
+
+def _parse_codex_approval_policy(value: str) -> str:
+    policy = value.strip().lower()
+    if policy not in {"never", "on-request"}:
+        raise ValueError("codex.approval_policy doit valoir never ou on-request.")
+    return policy
 
 
 def _legacy_model_ref(provider: str, model: str) -> str:

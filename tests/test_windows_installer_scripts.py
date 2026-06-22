@@ -29,6 +29,8 @@ def test_installer_config_defaults_are_present():
         "shell_full_access = $true",
         "allow_delete = $true",
         "allow_git_write = $true",
+        'sandbox_mode = "workspace-write"',
+        'approval_policy = "never"',
         'detail = "minimal"',
         '"config.json"',
     ]
@@ -38,6 +40,18 @@ def test_installer_config_defaults_are_present():
     assert "WriteAllText($configPath" in content
     assert "UTF8Encoding]::new($false)" in content
     assert "Set-Content -LiteralPath $configPath" not in content
+
+
+def test_installer_writes_codex_workspace_write_config():
+    content = (ROOT / "install.ps1").read_text(encoding="utf-8")
+
+    assert 'codex = [ordered]@{' in content
+    assert 'sandbox_mode = "workspace-write"' in content
+    assert 'approval_policy = "never"' in content
+    assert 'Add-MissingConfigValue $codexConfig "sandbox_mode" "workspace-write"' in content
+    assert '$approvalPolicy = if ($workspaceConfig.full_access -eq $true) { "never" } else { "on-request" }' in content
+    assert 'Add-MissingConfigValue $codexConfig "approval_policy" $approvalPolicy' in content
+    assert "Copy-Item -LiteralPath $configPath -Destination $backupPath" in content
 
 
 def test_installer_recommended_repo_and_paths_are_present():

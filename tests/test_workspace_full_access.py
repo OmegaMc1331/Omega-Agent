@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from omega_agent.config import OmegaConfig
-from omega_agent.doctor import run_doctor
+from omega_agent.doctor import run_doctor, run_workspace_write_test
 from omega_agent.runtime.approvals import ApprovalsStore
 from omega_agent.runtime.sessions import SessionsStore
 from omega_agent.runtime.tool_broker import ToolBroker
@@ -18,6 +18,9 @@ def test_doctor_reports_workspace_full_access_active(tmp_path: Path, monkeypatch
     checks = {check.name: check.detail for check in run_doctor(cfg)}
 
     assert checks["Workspace full access"] == "active"
+    assert checks["Codex sandbox mode"].endswith("effective=workspace-write")
+    assert checks["Codex approval policy"] == "never"
+    assert checks["Workspace write test"].startswith("PASS:")
     assert checks["Approval inside workspace"] == "disabled"
     assert checks["Outside workspace access"] == "denied"
     assert checks["Shell inside workspace"] == "enabled"
@@ -59,6 +62,8 @@ def test_config_json_full_access_values_are_read(tmp_path: Path, monkeypatch):
     set_config_value("workspace.shell_full_access", True)
     set_config_value("workspace.allow_delete", True)
     set_config_value("workspace.allow_git_write", True)
+    set_config_value("codex.sandbox_mode", "workspace-write")
+    set_config_value("codex.approval_policy", "never")
 
     cfg = OmegaConfig.from_env()
 
@@ -68,6 +73,8 @@ def test_config_json_full_access_values_are_read(tmp_path: Path, monkeypatch):
     assert cfg.shell_full_access_in_workspace is True
     assert cfg.allow_delete_in_workspace is True
     assert cfg.allow_git_write_in_workspace is True
+    assert cfg.codex_sandbox_mode == "workspace-write"
+    assert cfg.codex_approval_policy == "never"
 
 
 def test_workspace_full_access_file_tools_modify_real_files(tmp_path: Path):
@@ -114,3 +121,38 @@ def test_tool_broker_full_access_integration_no_approval_and_denies_outside(tmp_
     assert denied.status == "denied"
     assert not outside.exists()
     assert ApprovalsStore(cfg).list(status="pending") == []
+
+
+def test_workspace_doctor_performs_real_write_test(tmp_path: Path):
+    workspace = tmp_path / "workspace"
+    cfg = OmegaConfig(
+        model="test",
+        workspace=workspace,
+        require_approval=False,
+        workspace_full_access=True,
+    )
+
+    check = run_workspace_write_test(cfg)
+
+    assert check.ok is True
+    assert check.detail.startswith("PASS:")
+    assert not (workspace / ".omega-write-test").exists()
+
+
+def test_outside_workspace_still_denied(tmp_path: Path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    outside = tmp_path / "outside.txt"
+    cfg = OmegaConfig(
+        model="test",
+        workspace=workspace,
+        require_approval=False,
+        workspace_full_access=True,
+        codex_sandbox_mode="workspace-write",
+        codex_approval_policy="never",
+    )
+
+    result = ToolBroker(cfg).call("write_file", {"relative_path": str(outside), "content": "blocked"})
+
+    assert result.status == "denied"
+    assert not outside.exists()
