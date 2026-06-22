@@ -31,6 +31,7 @@ def test_codex_auth_status_cached_across_turns(tmp_path: Path, monkeypatch):
 
     monkeypatch.setattr("omega_agent.codex_backend.codex_login_status", fake_login_status)
     monkeypatch.setattr("omega_agent.codex_backend.subprocess.run", fake_run)
+    monkeypatch.setattr("omega_agent.codex_backend.codex_supports_global_runtime_flags", lambda _: True)
 
     assert run_codex_turn(cfg, [], "bonjour") == "ok"
     assert run_codex_turn(cfg, [], "encore") == "ok"

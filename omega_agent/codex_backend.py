@@ -13,6 +13,8 @@ from .security import log_action
 CODEX_LOGIN_HINT = "Lance d'abord : codex login"
 _AUTH_CACHE_LOCK = Lock()
 _AUTH_CACHE: dict[str, object] = {"expires_at": 0.0, "value": None}
+_CODEX_HELP_CACHE_LOCK = Lock()
+_CODEX_HELP_CACHE: dict[str, str] = {}
 
 
 def codex_version() -> str | None:
@@ -92,6 +94,86 @@ def effective_codex_approval_policy(config: OmegaConfig) -> str:
     return config.codex_approval_policy
 
 
+def codex_supports_global_runtime_flags(executable: str) -> bool:
+    with _CODEX_HELP_CACHE_LOCK:
+        cached = _CODEX_HELP_CACHE.get(executable)
+    if cached is None:
+        try:
+            result = subprocess.run(
+                [executable, "--help"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                timeout=10,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError):
+            help_text = ""
+        else:
+            help_text = (result.stdout or "") + (result.stderr or "")
+        with _CODEX_HELP_CACHE_LOCK:
+            _CODEX_HELP_CACHE[executable] = help_text
+    else:
+        help_text = cached
+    return all(flag in help_text for flag in ("--ask-for-approval", "--sandbox", "--cd"))
+
+
+def build_codex_exec_command(
+    executable: str,
+    config: OmegaConfig,
+    output_file: os.PathLike[str] | str,
+    *,
+    supports_global_runtime_flags: bool,
+) -> list[str]:
+    sandbox_mode = effective_codex_sandbox_mode(config)
+    approval_policy = effective_codex_approval_policy(config)
+    command = [executable]
+    if supports_global_runtime_flags:
+        command.extend(
+            [
+                "--cd",
+                str(config.workspace),
+                "--sandbox",
+                sandbox_mode,
+                "--ask-for-approval",
+                approval_policy,
+            ]
+        )
+    else:
+        command.extend(
+            [
+                "-c",
+                f'sandbox_mode="{sandbox_mode}"',
+                "-c",
+                f'approval_policy="{approval_policy}"',
+            ]
+        )
+    command.extend(
+        [
+            "exec",
+            "--model",
+            config.model,
+            "--ephemeral",
+            "--ignore-user-config",
+            "--ignore-rules",
+            "--skip-git-repo-check",
+            "--output-last-message",
+            str(output_file),
+            "-",
+        ]
+    )
+    return command
+
+
+def _redacted_codex_command_shape(command: list[str], config: OmegaConfig, output_file: os.PathLike[str] | str) -> list[str]:
+    replacements = {
+        command[0]: "codex",
+        str(config.workspace): "<workspace>",
+        str(output_file): "<output-file>",
+    }
+    return [replacements.get(argument, argument) for argument in command]
+
+
 def build_codex_prompt(history: list[dict[str, str]], user_input: str, config: OmegaConfig | None = None) -> str:
     recent_history = history[-12:]
     transcript = "\n".join(f"{item['role']}: {item['content']}" for item in recent_history)
@@ -155,28 +237,28 @@ def run_codex_turn(config: OmegaConfig, history: list[dict[str, str]], user_inpu
     sandbox_mode = effective_codex_sandbox_mode(config)
     approval_policy = effective_codex_approval_policy(config)
     prompt = build_codex_prompt(history, user_input, config)
-    command = [
+    supports_global_runtime_flags = codex_supports_global_runtime_flags(executable)
+    command = build_codex_exec_command(
         executable,
-        "exec",
-        "--model",
-        config.model,
-        "--cd",
-        str(config.workspace),
-        "--sandbox",
-        sandbox_mode,
-        "--ask-for-approval",
-        approval_policy,
-        "--ephemeral",
-        "--ignore-user-config",
-        "--ignore-rules",
-        "--skip-git-repo-check",
-        "--output-last-message",
-        str(output_file),
-        "-",
-    ]
+        config,
+        output_file,
+        supports_global_runtime_flags=supports_global_runtime_flags,
+    )
     env = os.environ.copy()
     env["OMEGA_WORKSPACE"] = str(config.workspace)
 
+    log_action(
+        config,
+        "codex_command",
+        {
+            "command_shape": _redacted_codex_command_shape(command, config, output_file),
+            "sandbox_mode": sandbox_mode,
+            "approval_policy": approval_policy,
+            "workspace": str(config.workspace),
+            "cwd": str(config.workspace),
+            "runtime_config_source": "global-flags" if supports_global_runtime_flags else "config-overrides",
+        },
+    )
     result = subprocess.run(
         command,
         input=prompt,
@@ -196,6 +278,9 @@ def run_codex_turn(config: OmegaConfig, history: list[dict[str, str]], user_inpu
             "returncode": result.returncode,
             "sandbox_mode": sandbox_mode,
             "approval_policy": approval_policy,
+            "workspace": str(config.workspace),
+            "cwd": str(config.workspace),
+            "runtime_config_source": "global-flags" if supports_global_runtime_flags else "config-overrides",
         },
     )
 

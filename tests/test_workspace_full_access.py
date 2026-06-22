@@ -139,6 +139,23 @@ def test_workspace_doctor_performs_real_write_test(tmp_path: Path):
     assert not (workspace / ".omega-write-test").exists()
 
 
+def test_workspace_doctor_reports_codex_sandbox_workspace_write(tmp_path: Path, monkeypatch):
+    cfg = OmegaConfig(
+        model="test",
+        workspace=tmp_path,
+        require_approval=False,
+        workspace_full_access=True,
+        codex_sandbox_mode="read-only",
+    )
+    monkeypatch.setattr("omega_agent.doctor.codex_version", lambda: "codex")
+    monkeypatch.setattr("omega_agent.doctor.codex_login_status", lambda: (True, "logged in"))
+
+    checks = {check.name: check for check in run_doctor(cfg)}
+
+    assert checks["Codex sandbox mode"].ok is True
+    assert checks["Codex sandbox mode"].detail.endswith("effective=workspace-write")
+
+
 def test_outside_workspace_still_denied(tmp_path: Path):
     workspace = tmp_path / "workspace"
     workspace.mkdir()
