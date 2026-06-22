@@ -108,6 +108,30 @@ def main(argv: Sequence[str] | None = None) -> int:
     serve_parser.add_argument("--no-open", action="store_true")
     subparsers.add_parser("chat")
     subparsers.add_parser("doctor")
+    update_parser = subparsers.add_parser(
+        "update",
+        help="Mettre a jour Omega Agent sans reinitialiser les donnees utilisateur",
+    )
+    update_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Conserver les modifications locales dans un stash avant la mise a jour",
+    )
+    update_parser.add_argument(
+        "--branch",
+        default=None,
+        help="Basculer sur cette branche puis effectuer un pull --ff-only depuis origin",
+    )
+    update_parser.add_argument(
+        "--skip-frontend",
+        action="store_true",
+        help="Ne pas installer ni reconstruire Omega Control",
+    )
+    update_parser.add_argument(
+        "--skip-doctor",
+        action="store_true",
+        help="Ne pas lancer les diagnostics apres la mise a jour",
+    )
     ui_parser = subparsers.add_parser("ui")
     ui_subparsers = ui_parser.add_subparsers(dest="ui_command")
     ui_subparsers.add_parser("dev")
@@ -513,6 +537,8 @@ def _serve_command(args: argparse.Namespace) -> int:
 def _dispatch_cli_command(args: argparse.Namespace) -> int:
     if args.command == "doctor":
         return doctor_command()
+    if args.command == "update":
+        return update_command(args)
     if args.command == "chat":
         asyncio.run(chat_loop())
         return 0
@@ -554,6 +580,31 @@ def _dispatch_cli_command(args: argparse.Namespace) -> int:
         return handler(args)
     console.print("Commande inconnue. Commandes: serve, chat, doctor, ui, skills, plugins, tools, workspace, security")
     return 2
+
+
+def update_command(args: argparse.Namespace) -> int:
+    from .updater import OmegaUpdater, UpdateError, UpdateOptions, print_update_summary
+
+    emit = lambda text: console.print(text, markup=False)
+    updater = OmegaUpdater(emit=emit)
+    try:
+        summary = updater.update(
+            UpdateOptions(
+                force=bool(args.force),
+                branch=args.branch,
+                skip_frontend=bool(args.skip_frontend),
+                skip_doctor=bool(args.skip_doctor),
+            )
+        )
+    except UpdateError as exc:
+        console.print(f"[red]Update refusee ou interrompue:[/red] {exc}")
+        return 1
+    print_update_summary(summary, emit=emit)
+    if summary.doctors_status == "fail":
+        console.print("[yellow]Mise a jour terminee, mais au moins un doctor a echoue.[/yellow]")
+        return 1
+    console.print("[green]Omega Agent est a jour. Relance Omega pour charger la nouvelle version.[/green]")
+    return 0
 
 
 def ui_dev_command() -> int:

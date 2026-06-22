@@ -217,6 +217,50 @@ powershell -ExecutionPolicy Bypass -File .\install-omega.ps1
 
 Lisez le script avant de l’exécuter. L’option `-Force` remplace le répertoire d’installation existant ; elle ne doit être utilisée que pour une réinstallation volontaire.
 
+## Mettre à jour Omega Agent
+
+Une installation Git existante peut être mise à jour sans désinstaller Omega Agent :
+
+```powershell
+omega update
+```
+
+La commande :
+
+- affiche le commit, la branche et l’état du dépôt ;
+- sauvegarde `$HOME\.omega\config.json` avant toute modification ;
+- récupère les changements avec Git et refuse les merges non fast-forward ;
+- met à jour la venv et l’installation Python éditable ;
+- installe les dépendances et reconstruit Omega Control lorsque Node.js est disponible ;
+- ajoute les nouvelles clés de configuration sans remplacer les valeurs utilisateur ;
+- lance `omega doctor` puis `omega workspace doctor`.
+
+Le workspace, la base runtime, les credentials locaux, les logs et les fichiers personnels ne sont ni supprimés ni réinitialisés.
+
+Options disponibles :
+
+```powershell
+# Conserver les changements locaux dans un stash nommé, puis mettre à jour
+omega update --force
+
+# Basculer sur main puis effectuer un pull --ff-only depuis origin
+omega update --branch main
+
+# Mettre à jour uniquement Git et Python
+omega update --skip-frontend
+
+# Ne pas lancer les diagnostics finaux
+omega update --skip-doctor
+```
+
+Sans `--force`, un dépôt contenant des modifications suivies ou non suivies est refusé et la liste des fichiers concernés est affichée. Avec `--force`, ces modifications sont placées dans un stash Git explicite ; elles ne sont pas supprimées et le stash n’est pas réappliqué automatiquement.
+
+Le script d’installation expose le même chemin pour une installation sous `%LOCALAPPDATA%\OmegaAgent` :
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install.ps1 -Update
+```
+
 ## Configuration
 
 La source de vérité est :

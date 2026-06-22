@@ -63,6 +63,18 @@ def test_installer_recommended_repo_and_paths_are_present():
     assert "codex login" in content
 
 
+def test_installer_supports_update_mode():
+    content = (ROOT / "install.ps1").read_text(encoding="utf-8")
+
+    assert "[switch]$Update" in content
+    assert 'if ($Update) {' in content
+    assert '$updateArgs = @("update")' in content
+    assert 'if ($Force) { $updateArgs += "--force" }' in content
+    assert 'if ($SkipNode) { $updateArgs += "--skip-frontend" }' in content
+    assert "& $omegaExe @updateArgs" in content
+    assert "& $venvPython -m omega_agent.main @updateArgs" in content
+
+
 def test_uninstall_only_targets_marked_profile_block():
     content = (ROOT / "uninstall.ps1").read_text(encoding="utf-8")
 

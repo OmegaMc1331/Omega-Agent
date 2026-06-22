@@ -7,7 +7,8 @@ param(
     [switch]$SkipCodex,
     [switch]$NoOpen,
     [switch]$Force,
-    [switch]$DevMode
+    [switch]$DevMode,
+    [switch]$Update
 )
 
 $ErrorActionPreference = "Stop"
@@ -265,6 +266,34 @@ Write-Step "PowerShell $($PSVersionTable.PSVersion)"
 
 $InstallDir = [System.IO.Path]::GetFullPath($InstallDir)
 $WorkspaceDir = [System.IO.Path]::GetFullPath($WorkspaceDir)
+
+if ($Update) {
+    if (-not (Test-Path -LiteralPath $InstallDir -PathType Container)) {
+        Write-Err "Installation Omega Agent introuvable: $InstallDir"
+        exit 1
+    }
+
+    $omegaExe = Join-Path $InstallDir ".venv\Scripts\omega.exe"
+    $venvPython = Join-Path $InstallDir ".venv\Scripts\python.exe"
+    $updateArgs = @("update")
+    if ($Force) { $updateArgs += "--force" }
+    if ($PSBoundParameters.ContainsKey("Branch")) { $updateArgs += @("--branch", $Branch) }
+    if ($SkipNode) { $updateArgs += "--skip-frontend" }
+
+    Write-Step "Mise a jour de l'installation existante: $InstallDir"
+    if (Test-Path -LiteralPath $omegaExe -PathType Leaf) {
+        & $omegaExe @updateArgs
+        exit $LASTEXITCODE
+    }
+    if (Test-Path -LiteralPath $venvPython -PathType Leaf) {
+        & $venvPython -m omega_agent.main @updateArgs
+        exit $LASTEXITCODE
+    }
+
+    Write-Err "Commande Omega introuvable dans l'installation. Repare la venv ou reinstalle Omega Agent."
+    exit 1
+}
+
 Install-Source $InstallDir $RepoUrl $Branch ([bool]$DevMode)
 
 $pythonCommand = Find-Python
