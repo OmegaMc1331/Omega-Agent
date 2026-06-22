@@ -6,6 +6,20 @@ SENSITIVE_TERMS = {"token", "secret", "password", "credential", ".ssh", "cookies
 NETWORK_TERMS = {"http://", "https://", "invoke-webrequest", "curl", "wget", "iex"}
 WRITE_TERMS = {"write", "delete", "remove", "rm", "del", "erase", "move", "copy", ">"}
 RISK_LEVEL_SCORES = {"low": 1, "medium": 2, "high": 3, "critical": 4}
+FILESYSTEM_TOOLS = {
+    "list_files",
+    "read_file",
+    "write_file",
+    "append_file",
+    "delete_file",
+    "create_directory",
+    "delete_directory",
+    "move_file",
+    "copy_file",
+    "list_tree",
+    "file_exists",
+}
+FILE_CONTENT_ARGUMENTS = {"content"}
 
 
 @dataclass(frozen=True)
@@ -23,9 +37,37 @@ def max_risk_level(*levels: str) -> str:
     return max((str(level or "low").lower() for level in levels), key=risk_level_score, default="low")
 
 
+def classify_action_risk(
+    tool_name: str,
+    arguments: dict | None = None,
+    *,
+    action_category: str | None = None,
+    path_in_workspace: bool | None = None,
+) -> RiskAssessment:
+    category = str(action_category or "").lower()
+    if category == "system_sensitive":
+        return RiskAssessment("critical", 100, "action system-sensitive")
+    if tool_name in FILESYSTEM_TOOLS and path_in_workspace is False:
+        return RiskAssessment("critical", 100, "chemin hors workspace ou sensible")
+    if category == "read_only":
+        return RiskAssessment("low", 10, "lecture seule dans le workspace")
+    if category == "reversible_write":
+        if tool_name in {"write_file", "append_file", "git_add", "git_commit", "git_restore_file"}:
+            return RiskAssessment("high", 70, "ecriture reversible dans le workspace")
+        return RiskAssessment("medium", 40, "modification reversible dans le workspace")
+    if category == "destructive_write":
+        return RiskAssessment("high", 80, "ecriture destructive dans le workspace")
+    if category == "external_side_effect":
+        return RiskAssessment("high", 85, "effet externe")
+    return score_risk(tool_name, arguments)
+
+
 def score_risk(tool_name: str, arguments: dict | None = None) -> RiskAssessment:
     args = arguments or {}
-    haystack = f"{tool_name} {args}".lower()
+    risk_arguments = args
+    if tool_name in {"write_file", "append_file"}:
+        risk_arguments = {key: value for key, value in args.items() if key not in FILE_CONTENT_ARGUMENTS}
+    haystack = f"{tool_name} {risk_arguments}".lower()
     score = 5
     reasons: list[str] = []
 

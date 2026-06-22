@@ -52,7 +52,8 @@ def is_path_inside_workspace(path: str | Path, workspace: str | Path) -> bool:
     root = Path(workspace).expanduser().resolve()
     candidate = Path(path).expanduser().resolve()
     try:
-        return os.path.commonpath([str(root), str(candidate)]) == str(root)
+        common = os.path.commonpath([str(root), str(candidate)])
+        return os.path.normcase(common) == os.path.normcase(str(root))
     except ValueError:
         return False
 

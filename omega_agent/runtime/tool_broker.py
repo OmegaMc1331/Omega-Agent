@@ -23,7 +23,10 @@ from omega_agent.runtime.tools_registry import HANDLERS, ToolsRegistry
 from omega_agent.security import log_action, workspace_policy_decision
 from omega_agent.security.browser_policy import browser_action_requires_approval, validate_browser_tool_request
 from omega_agent.security.desktop_policy import desktop_action_requires_approval, validate_desktop_tool_request
+from omega_agent.security.policy_rules import classify_action as classify_policy_action
+from omega_agent.security.policy_rules import is_workspace_resource
 from omega_agent.security.project_policy import project_config, validate_project_tool
+from omega_agent.security.risk import classify_action_risk, max_risk_level
 from omega_agent.tools.desktop import active_window_title
 
 
@@ -93,13 +96,20 @@ class ToolBroker:
         step = self.durable.append_step(run_id, "tool_call", tool_id, input={"tool_name": tool_id, "arguments": arguments}, status="running")
         tool = self.registry.get(tool_id)
         if tool is None or not tool.enabled:
-            decision = {"action": "deny", "reason": "Tool introuvable ou desactive.", "risk_level": "critical"}
+            delete_disabled = tool_id in {"delete_file", "delete_directory"} and not self.config.allow_delete_in_workspace
+            reason = "Suppression refusee: workspace.allow_delete=false." if delete_disabled else "Tool introuvable ou desactive."
+            decision = {
+                "action": "deny",
+                "reason": reason,
+                "risk_level": "high" if delete_disabled else "critical",
+                "action_category": "destructive_write" if delete_disabled else "system_sensitive",
+            }
             action = self.durable.record_action(run_id, tool_id, arguments, decision, step_id=step.id)
-            self.durable.fail_step(step.id, "Tool introuvable ou desactive.")
+            self.durable.fail_step(step.id, reason)
             if owns_run:
-                self.durable.fail_run(run_id, "Tool introuvable ou desactive.")
-            self._record_capability_usage(tool_id, "denied", run_id, session_id, error="Tool introuvable ou desactive.")
-            return ToolResult("denied", "Tool introuvable ou desactive.")
+                self.durable.fail_run(run_id, reason)
+            self._record_capability_usage(tool_id, "denied", run_id, session_id, error=reason)
+            return ToolResult("denied", reason)
         emit_reasoning_event(
             session_id or "",
             "reasoning.tool_considered",
@@ -168,11 +178,25 @@ class ToolBroker:
             agent_profile_id=getattr(profile, "id", None),
             connector_id=str(connector_context.get("connector_id") or "") or None,
         )
+        action_category = str(connector_context.get("action_category") or classify_policy_action(tool_id, arguments))
+        contextual_risk = classify_action_risk(
+            tool_id,
+            arguments,
+            action_category=action_category,
+            path_in_workspace=is_workspace_resource(active_config, tool_id, arguments),
+        ).level
+        risk_level = str(
+            connector_context.get("risk_level")
+            or max_risk_level(
+                contextual_risk,
+                tool.risk_level or tool.risk,
+            )
+        )
         budget_action = {
             "tool_name": tool_id,
             "arguments": arguments,
-            "risk_level": str(connector_context.get("risk_level") or tool.risk_level or tool.risk),
-            "action_category": str(connector_context.get("action_category") or ""),
+            "risk_level": risk_level,
+            "action_category": action_category,
             "connector_id": str(connector_context.get("connector_id") or "") or None,
             "approval_granted": approval_id is not None,
             "skip_action_count": bool(budget_context.workflow_run_id),

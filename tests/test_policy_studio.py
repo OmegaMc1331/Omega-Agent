@@ -64,6 +64,41 @@ def test_policy_simulator_core_cases(tmp_path: Path):
     assert system_sensitive["final_decision"] == "deny"
 
 
+def test_policy_simulate_write_file_workspace_returns_allow(tmp_path: Path):
+    config = cfg(tmp_path)
+
+    result = PolicySimulator(config).simulate_policy(
+        {
+            "tool_name": "write_file",
+            "arguments": {
+                "relative_path": "test-policy.txt",
+                "content": "References to tokens and secrets must not change path risk.",
+            },
+        },
+        store=False,
+    )
+
+    assert result["final_decision"] == "allow"
+    assert result["action_category"] == "reversible_write"
+    assert result["risk_level"] == "high"
+
+
+def test_policy_simulate_write_file_outside_workspace_returns_deny(tmp_path: Path):
+    config = cfg(tmp_path)
+
+    result = PolicySimulator(config).simulate_policy(
+        {
+            "tool_name": "write_file",
+            "arguments": {"relative_path": str(tmp_path / "outside.txt"), "content": "blocked"},
+        },
+        store=False,
+    )
+
+    assert result["final_decision"] == "deny"
+    assert result["risk_level"] == "critical"
+    assert "hors workspace" in result["reason"].lower()
+
+
 def test_custom_rule_influences_tool_broker_and_action_journal(tmp_path: Path):
     config = cfg(tmp_path)
     profile = PolicyProfilesStore(config).create(name="Test Deny", priority=100, default_action="allow")

@@ -8,9 +8,10 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from omega_agent.config import OmegaConfig
+from omega_agent.security.policy_rules import classify_action, is_workspace_resource
 from omega_agent.security.sandbox import safe_path
 from omega_agent.security.redaction import redact
-from omega_agent.security.risk import score_risk
+from omega_agent.security.risk import classify_action_risk, score_risk
 
 SENSITIVE_PARTS = {
     ".ssh",
@@ -215,12 +216,25 @@ def parse_command(command: str, *, full_access: bool = False, allow_git_write: b
 
 def _base_workspace_policy_decision(config: OmegaConfig, tool_name: str, arguments: dict | None = None, require_approval: bool = True) -> PolicyDecision:
     args = arguments or {}
+    action_category = classify_action(tool_name, args)
     try:
         _validate_workspace_tool_request(config, tool_name, args)
     except PermissionError as exc:
-        return PolicyDecision("deny", str(exc), "critical", redact(args))
+        return PolicyDecision("deny", str(exc), "critical", redact(args), action_category=action_category)
+    assessment = classify_action_risk(
+        tool_name,
+        args,
+        action_category=action_category,
+        path_in_workspace=is_workspace_resource(config, tool_name, args),
+    )
     if config.workspace_full_access and tool_name in WORKSPACE_FULL_ACCESS_TOOLS:
-        return PolicyDecision("allow", "Workspace Full Access actif.", "low", redact(args))
+        return PolicyDecision(
+            "allow",
+            "Workspace Full Access actif.",
+            assessment.level,
+            redact(args),
+            action_category=action_category,
+        )
     return decide(tool_name, args, require_approval=require_approval)
 
 
@@ -259,6 +273,8 @@ def workspace_policy_decision(
 def _validate_workspace_tool_request(config: OmegaConfig, tool_name: str, arguments: dict) -> None:
     if tool_name in {"list_files", "read_file", "write_file", "append_file", "delete_file", "create_directory", "delete_directory", "list_tree", "file_exists"}:
         safe_path(config, str(arguments.get("relative_path", ".")))
+        if tool_name in {"delete_file", "delete_directory"} and not config.allow_delete_in_workspace:
+            raise PermissionError("Suppression refusee: workspace.allow_delete=false.")
     elif tool_name in {"move_file", "copy_file"}:
         safe_path(config, str(arguments.get("source_path", "")))
         safe_path(config, str(arguments.get("destination_path", "")))

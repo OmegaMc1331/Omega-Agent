@@ -119,6 +119,30 @@ def test_delete_file_snapshot_rolls_back_by_restoring(tmp_path: Path):
     assert target.read_text(encoding="utf-8") == "SAVE"
 
 
+def test_delete_file_workspace_snapshot_created(tmp_path: Path):
+    config = cfg(tmp_path)
+    session = SessionsStore(config).create_session("Delete snapshot")
+    target = config.workspace / "delete-snapshot.txt"
+    target.write_text("SAVE", encoding="utf-8")
+
+    result = ToolBroker(config).call(
+        "delete_file",
+        {"relative_path": "delete-snapshot.txt"},
+        session_id=session.id,
+    )
+
+    run = DurableRuntime(config).list_runs(session_id=session.id, limit=1)[0]
+    snapshots = DurableRuntime(config).list_snapshots(run_id=run.id)
+    actions = DurableRuntime(config).list_actions(run.id)
+
+    assert result.status == "completed"
+    assert len(snapshots) == 1
+    assert snapshots[0].existed_before is True
+    assert actions[0].action_type == "destructive_write"
+    assert actions[0].snapshot_id == snapshots[0].id
+    assert actions[0].rollback_available is True
+
+
 def test_outside_workspace_is_denied_and_journaled(tmp_path: Path):
     workspace = tmp_path / "workspace"
     outside = tmp_path / "outside.txt"

@@ -1,8 +1,11 @@
+import os
 from pathlib import Path
 
 import pytest
 
 from omega_agent.config import OmegaConfig
+from omega_agent.security.project_policy import safe_project_path
+from omega_agent.security.sandbox import is_path_inside_workspace, resolve_workspace_path
 from omega_agent.tools.files import _delete_file, _read_file, _write_file
 from omega_agent.tools.shell import _run_shell
 
@@ -100,6 +103,20 @@ def test_path_traversal_is_refused(tmp_path: Path):
 
     with pytest.raises(PermissionError):
         _read_file(cfg, "../outside.txt")
+
+
+def test_windows_path_resolution_inside_workspace(tmp_path: Path):
+    if os.name != "nt":
+        pytest.skip("Windows path semantics")
+    workspace = tmp_path / "Omega_Workspace"
+    workspace.mkdir()
+    absolute_target = workspace / "nested" / "test.txt"
+
+    resolved = resolve_workspace_path(str(absolute_target), workspace)
+
+    assert resolved == absolute_target.resolve()
+    assert is_path_inside_workspace(resolved, Path(str(workspace).swapcase()))
+    assert safe_project_path(workspace, str(absolute_target), mode="write") == absolute_target.resolve()
 
 
 def test_symlink_outside_workspace_is_refused(tmp_path: Path):

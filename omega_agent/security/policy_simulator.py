@@ -11,7 +11,7 @@ from omega_agent.runtime.storage import connect_runtime_db
 from omega_agent.security.policy_profiles import PolicyProfilesStore, PolicyRulesStore
 from omega_agent.security.policy_rules import classify_action, extract_resource, is_workspace_resource, risk_max, rule_matches, workspace_relative_or_raw
 from omega_agent.security.redaction import redact
-from omega_agent.security.risk import score_risk
+from omega_agent.security.risk import classify_action_risk
 
 
 @dataclass(frozen=True)
@@ -99,11 +99,17 @@ class PolicySimulator:
         if "command" in action_context and "command" not in arguments:
             arguments["command"] = action_context["command"]
         action_category = str(action_context.get("action_category") or classify_action(tool_name, arguments))
-        risk = str(action_context.get("risk_level") or arguments.get("risk_level") or score_risk(tool_name, arguments).level)
-        if action_category == "system_sensitive":
-            risk = "critical"
         resource = workspace_relative_or_raw(self.config, extract_resource(self.config, tool_name, arguments))
         path_in_workspace = is_workspace_resource(self.config, tool_name, arguments)
+        assessment = classify_action_risk(
+            tool_name,
+            arguments,
+            action_category=action_category,
+            path_in_workspace=path_in_workspace,
+        )
+        risk = str(action_context.get("risk_level") or assessment.level)
+        if action_category == "system_sensitive":
+            risk = "critical"
         return redact(
             {
                 "tool_name": tool_name,

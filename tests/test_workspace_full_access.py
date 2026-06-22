@@ -3,9 +3,11 @@ from pathlib import Path
 from omega_agent.config import OmegaConfig
 from omega_agent.doctor import run_doctor, run_workspace_write_test
 from omega_agent.runtime.approvals import ApprovalsStore
+from omega_agent.runtime.durable_runtime import DurableRuntime
 from omega_agent.runtime.sessions import SessionsStore
 from omega_agent.runtime.tool_broker import ToolBroker
 from omega_agent.security.audit import run_security_audit
+from omega_agent.security.policy_simulator import PolicySimulator
 from omega_agent.tools.files import _append_file, _copy_file, _create_directory, _file_exists, _move_file, _write_file
 from omega_agent.tools.shell import _run_shell
 
@@ -48,6 +50,96 @@ def test_tool_broker_does_not_create_approval_for_workspace_safe_write(tmp_path:
     assert result.status == "completed"
     assert (tmp_path / "note.txt").read_text(encoding="utf-8") == "ok"
     assert ApprovalsStore(cfg).list(status="pending") == []
+
+
+def test_write_file_workspace_full_access_is_not_critical(tmp_path: Path):
+    cfg = OmegaConfig(
+        model="test",
+        workspace=tmp_path,
+        require_approval=False,
+        workspace_full_access=True,
+        db_path=tmp_path / "omega.db",
+    )
+
+    simulation = PolicySimulator(cfg).simulate_policy(
+        {
+            "tool_name": "write_file",
+            "arguments": {
+                "relative_path": "docs/security.md",
+                "content": "Never expose API tokens, passwords, secrets, or credentials.",
+            },
+        },
+        store=False,
+    )
+
+    assert simulation["action_category"] == "reversible_write"
+    assert simulation["risk_level"] in {"medium", "high"}
+    assert simulation["final_decision"] == "allow"
+
+
+def test_write_file_workspace_full_access_allowed_without_approval(tmp_path: Path):
+    cfg = OmegaConfig(
+        model="test",
+        workspace=tmp_path,
+        require_approval=False,
+        workspace_full_access=True,
+        db_path=tmp_path / "omega.db",
+    )
+
+    result = ToolBroker(cfg).call(
+        "write_file",
+        {
+            "relative_path": "docs/security.md",
+            "content": "Document tokens, passwords, secrets, and credentials safely.",
+        },
+    )
+
+    assert result.status == "completed"
+    assert (tmp_path / "docs" / "security.md").exists()
+    assert ApprovalsStore(cfg).list(status="pending") == []
+    run = DurableRuntime(cfg).list_runs(limit=1)[0]
+    action = DurableRuntime(cfg).list_actions(run.id)[0]
+    assert action.action_type == "reversible_write"
+    assert action.risk_level == "high"
+    assert action.policy_decision["action"] == "allow"
+
+
+def test_write_file_outside_workspace_denied(tmp_path: Path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    outside = tmp_path / "outside.txt"
+    cfg = OmegaConfig(
+        model="test",
+        workspace=workspace,
+        require_approval=False,
+        workspace_full_access=True,
+        db_path=tmp_path / "omega.db",
+    )
+
+    result = ToolBroker(cfg).call("write_file", {"relative_path": str(outside), "content": "blocked"})
+
+    assert result.status == "denied"
+    assert "hors workspace" in result.output.lower()
+    assert not outside.exists()
+
+
+def test_delete_file_workspace_requires_allow_delete(tmp_path: Path):
+    target = tmp_path / "delete-me.txt"
+    target.write_text("keep", encoding="utf-8")
+    cfg = OmegaConfig(
+        model="test",
+        workspace=tmp_path,
+        require_approval=False,
+        workspace_full_access=True,
+        allow_delete_in_workspace=False,
+        db_path=tmp_path / "omega.db",
+    )
+
+    result = ToolBroker(cfg).call("delete_file", {"relative_path": "delete-me.txt"})
+
+    assert result.status == "denied"
+    assert "workspace.allow_delete=false" in result.output
+    assert target.exists()
 
 
 def test_config_json_full_access_values_are_read(tmp_path: Path, monkeypatch):

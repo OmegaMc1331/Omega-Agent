@@ -90,13 +90,15 @@ def safe_project_path(root_path: str | Path, relative_path: str, policy: Project
     raw_path = (relative_path or ".").strip()
     if raw_path in {".", "./"}:
         target = root
+    elif raw_path.startswith("~"):
+        target = Path(raw_path).expanduser().resolve()
+    elif PureWindowsPath(raw_path).is_absolute() or PurePosixPath(raw_path).is_absolute():
+        target = Path(raw_path).resolve()
     else:
-        if raw_path.startswith("~") or PureWindowsPath(raw_path).is_absolute() or PurePosixPath(raw_path).is_absolute():
-            raise PermissionError("Acces refuse: le chemin doit etre relatif au projet.")
         target = (root / raw_path).resolve()
 
-    if os.path.commonpath([str(root), str(target)]) != str(root):
-        raise PermissionError("Acces refuse: chemin hors projet.")
+    if not _path_inside(root, target):
+        raise PermissionError("Acces refuse: chemin hors projet (hors workspace).")
     relative_parts = target.relative_to(root).parts
     if any(_is_sensitive_name(part) for part in relative_parts):
         raise PermissionError("Acces refuse: chemin sensible.")
@@ -106,9 +108,17 @@ def safe_project_path(root_path: str | Path, relative_path: str, policy: Project
     if not allowed:
         allowed = ["."]
     allowed_roots = [_policy_path(root, item) for item in allowed]
-    if not any(os.path.commonpath([str(allowed_root), str(target)]) == str(allowed_root) for allowed_root in allowed_roots):
+    if not any(_path_inside(allowed_root, target) for allowed_root in allowed_roots):
         raise PermissionError(f"Acces {mode} refuse par la politique projet.")
     return target
+
+
+def _path_inside(root: Path, target: Path) -> bool:
+    try:
+        common = os.path.commonpath([str(root.resolve()), str(target.resolve())])
+        return os.path.normcase(common) == os.path.normcase(str(root.resolve()))
+    except ValueError:
+        return False
 
 
 def project_config(config: OmegaConfig, root_path: str | Path, policy: ProjectPolicy | None = None, tool_id: str | None = None) -> OmegaConfig:

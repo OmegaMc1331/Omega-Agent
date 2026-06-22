@@ -375,7 +375,7 @@ class DurableRuntime:
                     action_id,
                     run_id,
                     step_id,
-                    classify_action(tool_name, arguments),
+                    str(decision.get("action_category") or classify_action(tool_name, arguments)),
                     tool_name,
                     json.dumps(redact(arguments), ensure_ascii=False),
                     json.dumps(redact(decision), ensure_ascii=False),
