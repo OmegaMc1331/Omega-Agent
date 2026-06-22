@@ -7,7 +7,8 @@ from pydantic import BaseModel, Field
 RiskLevel = Literal["low", "medium", "high", "critical"]
 SessionStatus = Literal["active", "archived", "closed"]
 JobKind = Literal["summarize_session", "scan_workspace", "compact_memory", "memory_compaction", "run_scheduled_prompt", "project_health_check"]
-MemoryScope = Literal["global", "session", "project"]
+MemoryScope = Literal["global", "session", "project", "agent", "run"]
+StandingOrderScope = Literal["global", "session", "project"]
 ChannelType = Literal["web", "cli", "webhook", "telegram", "discord"]
 ScheduleType = Literal["once", "interval", "cron"]
 ReasoningStatus = Literal["pending", "running", "completed", "failed"]
@@ -103,7 +104,7 @@ class ScheduledTaskPatchRequest(BaseModel):
 class StandingOrderCreateRequest(BaseModel):
     title: str = Field(default="", max_length=160)
     content: str = Field(min_length=1, max_length=20000)
-    scope: MemoryScope = "global"
+    scope: StandingOrderScope = "global"
     enabled: bool = True
     priority: int = Field(default=100, ge=0, le=10000)
 
@@ -111,7 +112,7 @@ class StandingOrderCreateRequest(BaseModel):
 class StandingOrderPatchRequest(BaseModel):
     title: str | None = Field(default=None, max_length=160)
     content: str | None = Field(default=None, min_length=1, max_length=20000)
-    scope: MemoryScope | None = None
+    scope: StandingOrderScope | None = None
     enabled: bool | None = None
     priority: int | None = Field(default=None, ge=0, le=10000)
 
@@ -151,10 +152,20 @@ class SkillCreateRequest(BaseModel):
     tools: list[str] = Field(default_factory=list, max_length=32)
     risk: RiskLevel = "low"
     tags: list[str] = Field(default_factory=list, max_length=32)
+    skill_type: str | None = None
+    definition: dict | None = None
+    test_cases: list[dict] = Field(default_factory=list, max_length=50)
+    metadata: dict = Field(default_factory=dict)
 
 
 class SkillUpdateRequest(BaseModel):
-    enabled: bool
+    enabled: bool | None = None
+    name: str | None = Field(default=None, min_length=1, max_length=160)
+    description: str | None = Field(default=None, max_length=2000)
+    skill_type: str | None = None
+    definition: dict | None = None
+    test_cases: list[dict] | None = Field(default=None, max_length=50)
+    changelog: str = Field(default="Skill updated", max_length=1000)
 
 
 class PluginUpdateRequest(BaseModel):
@@ -188,6 +199,17 @@ class SettingsPatchRequest(BaseModel):
 
 class ConfigPatchRequest(BaseModel):
     values: dict = Field(default_factory=dict)
+
+
+class ResearchStartRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=20000)
+    title: str | None = Field(default=None, max_length=160)
+    session_id: str | None = Field(default=None, max_length=64)
+    manual_sources: list[dict] = Field(default_factory=list, max_length=20)
+
+
+class ResearchExportRequest(BaseModel):
+    format: Literal["markdown", "json"] = "markdown"
 
 
 class StatusResponse(BaseModel):

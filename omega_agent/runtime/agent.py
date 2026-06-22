@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import unicodedata
 from collections.abc import Callable
 from contextlib import nullcontext
 from dataclasses import replace
@@ -12,9 +13,11 @@ from omega_agent.config import OmegaConfig
 from omega_agent.providers.base import ProviderAuthError
 from omega_agent.runtime.agent_profiles import DEFAULT_AGENT_PROFILE_ID, AgentProfile, AgentProfilesStore
 from omega_agent.runtime.context_builder import build_context
+from omega_agent.runtime.durable_runtime import DurableRuntime
 from omega_agent.runtime.events import EventsStore
 from omega_agent.runtime.model_selector import ModelSelector, split_model_ref
 from omega_agent.runtime.performance import PerformanceStore
+from omega_agent.runtime.project_memory import ProjectMemoryStore
 from omega_agent.runtime.project_context import use_project_config
 from omega_agent.runtime.projects import ProjectsStore
 from omega_agent.runtime.reasoning import ReasoningSink, emit_reasoning_event_async
@@ -95,6 +98,8 @@ class OmegaRuntime:
         self.performance_store = performance_store
         self.model_selector = model_selector or ModelSelector(config)
         self.tool_broker = ToolBroker(config)
+        self.durable = DurableRuntime(config)
+        self.last_run_id: str | None = None
 
     async def send_message(
         self,
@@ -107,6 +112,9 @@ class OmegaRuntime:
     ) -> str:
         perf = self.performance_store.start(session_id, {"provider": self.config.provider}) if self.performance_store else None
         session_id = session_id or self.sessions.default_session_id()
+        run_id: str | None = None
+        analysis_step_id: str | None = None
+        active_project_id: str | None = None
         if perf:
             perf.trace.session_id = session_id
         try:
@@ -147,6 +155,23 @@ class OmegaRuntime:
                 "prompt_injection_matches": scan.matches,
             }
             user_message = self.sessions.add_message(session_id, "user", message, metadata=metadata)
+            run = self.durable.create_run(
+                session_id,
+                message,
+                metadata={
+                    "user_message_id": user_message.id,
+                    "active_agent_profile_id": selected_profile_id,
+                    "project_id": session.project_id,
+                    "channel_id": channel_id,
+                    "channel_type": channel_type,
+                    "untrusted_input": untrusted_input,
+                },
+            )
+            run_id = run.id
+            self.last_run_id = run_id
+            self.durable.start_run(run_id)
+            analysis_step = self.durable.append_step(run_id, "reasoning", "Analyse de la demande", input={"message": message}, status="running")
+            analysis_step_id = analysis_step.id
             if perf:
                 perf.set_message_id(user_message.id)
 
@@ -186,6 +211,8 @@ class OmegaRuntime:
                 message_id=user_message.id,
                 sink=reasoning_sink,
             )
+            if analysis_step_id:
+                self.durable.complete_step(analysis_step_id, {"status": "analysis_completed"})
             self.events.add("message.created", {"session_id": session_id, "role": "user", "message_id": user_message.id}, session_id=session_id)
             if scan.untrusted:
                 self.events.add("error", {"kind": "prompt_injection_warning", "warning": scan.warning, "matches": scan.matches}, session_id=session_id)
@@ -202,6 +229,7 @@ class OmegaRuntime:
                 )
 
             project = self.projects.project_for_session(session_id)
+            active_project_id = project.id
             active_config = project_config(self.config, project.root_path, project.policy)
             resolved_model = self.model_selector.resolve_model(session_id=session_id, project_id=project.id, agent_profile_id=profile.id)
             provider_id, model_name = split_model_ref(resolved_model.primary_model_ref)
@@ -228,7 +256,7 @@ class OmegaRuntime:
             else:
                 direct_actions = _direct_actions_from_message(message)
                 if direct_actions:
-                    output = await self._execute_omega_actions(direct_actions, session_id, user_message.id, reasoning_sink)
+                    output = await self._execute_omega_actions(direct_actions, session_id, user_message.id, reasoning_sink, run_id)
                 else:
                     try:
                         model_output = await self._run_model_turn(
@@ -241,8 +269,12 @@ class OmegaRuntime:
                             user_message.id,
                             reasoning_sink,
                             perf,
+                            run_id,
                         )
                     except Exception as primary_exc:
+                        current = self.durable.get_run(run_id) if run_id else None
+                        if current and current.status == "paused":
+                            raise
                         if not resolved_model.fallback_model_ref:
                             self.events.add("model.error", {"model_ref": resolved_model.primary_model_ref, "error": str(primary_exc)}, session_id=session_id)
                             raise
@@ -259,13 +291,18 @@ class OmegaRuntime:
                             user_message.id,
                             reasoning_sink,
                             perf,
+                            run_id,
                         )
                     actions = _extract_omega_actions(model_output)
                     if actions:
-                        output = await self._execute_omega_actions(actions, session_id, user_message.id, reasoning_sink)
+                        output = await self._execute_omega_actions(actions, session_id, user_message.id, reasoning_sink, run_id)
                     else:
                         output = model_output
         except Exception as exc:
+            if run_id:
+                current = self.durable.get_run(run_id)
+                if current and current.status != "paused":
+                    self.durable.fail_run(run_id, str(exc))
             await emit_reasoning_event_async(
                 session_id,
                 "reasoning.error",
@@ -281,6 +318,12 @@ class OmegaRuntime:
             raise
 
         assistant_message = self.sessions.add_message(session_id, "assistant", output)
+        if run_id:
+            self.durable.set_run_message_ids(run_id, assistant_message_id=assistant_message.id)
+            current_run = self.durable.get_run(run_id)
+            if current_run and current_run.status not in {"needs_approval", "paused", "failed", "cancelled"}:
+                self.durable.complete_run(run_id, output)
+                self._capture_memory_suggestions(run_id, active_project_id, message, output)
         if perf:
             perf.mark("response_persisted")
         await emit_reasoning_event_async(
@@ -310,6 +353,27 @@ class OmegaRuntime:
             perf.complete(self.events)
         return output
 
+    def _capture_memory_suggestions(self, run_id: str, project_id: str | None, message: str, output: str) -> None:
+        if not (self.config.memory_enabled and self.config.memory_project_memory_enabled):
+            return
+        if not (self.config.memory_auto_capture_decisions or self.config.memory_auto_capture_tool_lessons):
+            return
+        text = f"{message}\n{output}"
+        lowered = _normalize_for_intent(text)
+        candidates: list[tuple[str, str, str]] = []
+        if self.config.memory_auto_capture_decisions and any(keyword in lowered for keyword in ("decision", "decider", "on garde", "retenir", "convention", "regle projet")):
+            candidates.append(("decision", _compact_memory_suggestion(message, output), "Decision ou convention explicite detectee dans le run."))
+        if self.config.memory_auto_capture_tool_lessons and any(keyword in lowered for keyword in ("erreur resolue", "corrige", "commande utile", "pytest", "npm run build", "workaround")):
+            candidates.append(("procedure", _compact_memory_suggestion(message, output), "Procedure ou lecon outil potentiellement reutilisable."))
+        if not candidates:
+            return
+        store = ProjectMemoryStore(self.config)
+        for suggested_type, content, reason in candidates[:2]:
+            try:
+                store.create_suggestion(run_id, suggested_type, content, reason, project_id=project_id)
+            except ValueError:
+                self.events.add("memory.suggestion.skipped", {"run_id": run_id, "reason": "redaction_or_policy"}, session_id=None)
+
     async def _run_model_turn(
         self,
         active_config: OmegaConfig,
@@ -321,6 +385,7 @@ class OmegaRuntime:
         user_message_id: str,
         reasoning_sink: ReasoningSink | None,
         perf,
+        run_id: str | None = None,
     ) -> str:
         with perf.step("tools_loaded") if perf and self.tools_provider else nullcontext():
             tools = self.tools_provider() if self.tools_provider else None
@@ -338,10 +403,23 @@ class OmegaRuntime:
         provider = self.model_selector.provider(provider_id)
         if provider is None:
             raise ValueError(f"Provider modèle inconnu: {provider_id}")
-        usage_id = self.model_selector.record_usage_start(session_id, model_ref)
-        started = asyncio.get_running_loop().time()
         codex_history = [{"role": "system", "content": context["system_prompt"]}]
         codex_history.extend({"role": item.role, "content": item.content} for item in history)
+        from omega_agent.governance.budget_enforcer import BudgetEnforcer
+
+        budgets = BudgetEnforcer(self.config)
+        budget_context = budgets.context(run_id=run_id, session_id=session_id, agent_profile_id=profile.id, provider_id=provider_id)
+        provider_action = {"provider_id": provider_id, "action_category": "read_only", "risk_level": "low"}
+        provider_budget = budgets.check_before_action(budget_context, provider_action)
+        estimated_input_tokens = max(1, (len(message) + sum(len(str(item.get("content") or "")) for item in codex_history)) // 4)
+        token_budget = budgets.check_metric(budget_context, "max_estimated_tokens", estimated_input_tokens)
+        blocking_budget = next((item for item in (provider_budget, token_budget) if item.action in {"pause", "deny", "require_approval"}), None)
+        if self.config.governance_budgets_enforce and blocking_budget is not None:
+            if run_id:
+                self.durable.pause_run_for_budget(run_id, blocking_budget.reason)
+            raise PermissionError(blocking_budget.reason)
+        usage_id = self.model_selector.record_usage_start(session_id, model_ref)
+        started = asyncio.get_running_loop().time()
         await emit_reasoning_event_async(
             session_id,
             "reasoning.step",
@@ -374,6 +452,25 @@ class OmegaRuntime:
                 perf.mark("provider_completed")
             latency_ms = int((asyncio.get_running_loop().time() - started) * 1000)
             self.model_selector.record_usage_complete(usage_id, latency_ms=latency_ms)
+            budgets.record_action_usage(budget_context, provider_action, {"status": "completed"})
+            result_value = locals().get("result")
+            input_tokens = getattr(result_value, "input_tokens", None) or estimated_input_tokens
+            output_tokens = getattr(result_value, "output_tokens", None) or max(1, len(output) // 4)
+            budgets.record_usage(
+                budget_context,
+                "max_estimated_tokens",
+                float(input_tokens + output_tokens),
+                metadata={"provider_id": provider_id, "model_ref": model_ref},
+            )
+            result_metadata = getattr(result_value, "metadata", {}) or {}
+            estimated_cost = result_metadata.get("estimated_cost") or result_metadata.get("cost")
+            if estimated_cost is not None:
+                budgets.record_usage(
+                    budget_context,
+                    "max_estimated_cost",
+                    float(estimated_cost),
+                    metadata={"provider_id": provider_id, "model_ref": model_ref},
+                )
             return output
         except ProviderAuthError:
             self.events.add("model.auth.missing", {"provider_id": provider_id, "model_ref": model_ref}, session_id=session_id)
@@ -390,9 +487,11 @@ class OmegaRuntime:
         session_id: str,
         user_message_id: str,
         reasoning_sink: ReasoningSink | None,
+        run_id: str | None = None,
     ) -> str:
         observations: list[str] = []
-        for action in actions[:10]:
+        max_actions = max(1, int(self.config.runtime_max_actions_per_turn or 10))
+        for action in actions[:max_actions]:
             tool_id = str(action.get("tool") or action.get("name") or "").strip()
             arguments = action.get("arguments") if isinstance(action.get("arguments"), dict) else {}
             if not tool_id:
@@ -409,7 +508,7 @@ class OmegaRuntime:
                 message_id=user_message_id,
                 sink=reasoning_sink,
             )
-            result = await asyncio.to_thread(self.tool_broker.call, tool_id, arguments, session_id)
+            result = await asyncio.to_thread(self.tool_broker.call, tool_id, arguments, session_id, None, run_id)
             if result.status == "completed":
                 observations.append(result.output)
             elif result.status == "approval_required":
@@ -476,7 +575,16 @@ def _actions_from_payload(payload: object) -> list[dict]:
 def _direct_actions_from_message(message: str) -> list[dict]:
     text = message.strip()
     lowered = text.lower()
+    plain = _strip_accents(lowered)
     file_match = re.search(r"([A-Za-z]:[\\/][\w.\- \\/]+?\.[A-Za-z0-9]{1,12}|[^\s\"']+\.[A-Za-z0-9]{1,12})", text)
+    if any(word in plain for word in ["cree", "creer", "create"]) and file_match:
+        path = file_match.group(1).strip().strip('"').strip("'")
+        content = _extract_requested_content(text)
+        return [{"tool": "write_file", "arguments": {"relative_path": path, "content": content}}]
+    if any(word in plain for word in ["modifie", "modifier", "ecris", "ecrire", "remplace", "replace", "change"]) and file_match:
+        path = file_match.group(1).strip().strip('"').strip("'")
+        content = _extract_requested_content(text)
+        return [{"tool": "write_file", "arguments": {"relative_path": path, "content": content}}]
     if any(word in lowered for word in ["crée", "cree", "creer", "créer", "create"]) and file_match:
         path = file_match.group(1).strip().strip('"').strip("'")
         content = _extract_requested_content(text)
@@ -498,6 +606,7 @@ def _extract_requested_content(message: str) -> str:
     if quoted:
         return quoted.group(1)
     marker_patterns = [
+        r"(?:remplace|replace)\s+.+?\s+(?:par|with)\s+(.+)$",
         r"(?:texte|contenu)\s+(.+)$",
         r"avec\s+(?:le\s+)?(?:texte|contenu)\s+(.+)$",
     ]
@@ -508,6 +617,11 @@ def _extract_requested_content(message: str) -> str:
     return ""
 
 
+def _strip_accents(value: str) -> str:
+    normalized = unicodedata.normalize("NFKD", value)
+    return "".join(char for char in normalized if not unicodedata.combining(char))
+
+
 def _final_response_from_observations(observations: list[str]) -> str:
     if not observations:
         return "Aucune action Omega n'a ete executee."
@@ -515,6 +629,15 @@ def _final_response_from_observations(observations: list[str]) -> str:
     if denied:
         return "\n".join(denied)
     return "C'est fait.\n" + "\n".join(f"- {item}" for item in observations)
+
+
+def _compact_memory_suggestion(message: str, output: str) -> str:
+    text = " ".join(f"{message}\n{output}".split())
+    return text[:600]
+
+
+def _normalize_for_intent(value: str) -> str:
+    return unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode("ascii").lower()
 
 
 def _is_windows() -> bool:

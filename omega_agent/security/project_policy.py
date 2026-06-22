@@ -11,7 +11,7 @@ from omega_agent.security.policy import SENSITIVE_FILE_NAMES, SENSITIVE_PARTS, _
 
 
 FILESYSTEM_TOOLS = {"list_files", "read_file", "write_file", "append_file", "delete_file", "create_directory", "delete_directory", "move_file", "copy_file", "list_tree", "file_exists"}
-SHELL_TOOLS = {"run_shell", "git_status", "git_diff", "git_log", "git_add", "git_commit"}
+SHELL_TOOLS = {"run_shell", "git_status", "git_diff", "git_log", "git_branch", "git_show", "git_add", "git_commit", "git_restore_file"}
 BROWSER_TOOLS = {
     "browser",
     "browser_stub",

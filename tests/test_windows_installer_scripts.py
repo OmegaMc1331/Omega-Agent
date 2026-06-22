@@ -22,6 +22,7 @@ def test_installer_config_defaults_are_present():
     expected = [
         'default = "codex/gpt-5.5"',
         "path = $Workspace",
+        'mode = "tailscale"',
         "full_access = $true",
         "require_approval = $false",
         "require_approval_outside_workspace = $true",

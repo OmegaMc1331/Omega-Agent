@@ -3,10 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from omega_agent.config import OmegaConfig
+from omega_agent.connectors.registry import ConnectorsRegistry
 from omega_agent.tools.browser import _browser_click, _browser_close, _browser_extract_text, _browser_get_title, _browser_open_url, _browser_screenshot, _browser_type
 from omega_agent.tools.desktop import _desktop_click, _desktop_hotkey, _desktop_locate_text_stub, _desktop_screenshot, _desktop_type
 from omega_agent.tools.files import _append_file, _copy_file, _create_directory, _delete_directory, _delete_file, _file_exists, _list_files, _list_tree, _move_file, _read_file, _write_file
-from omega_agent.tools.git import git_add, git_commit, git_diff, git_log, git_status
+from omega_agent.tools.git import git_add, git_branch, git_commit, git_diff, git_log, git_restore_file, git_show, git_status
 from omega_agent.tools.memory import _recall, _remember
 from omega_agent.tools.shell import _run_shell
 from omega_agent.tools.system import system_info
@@ -58,10 +59,31 @@ def list_tools(config: OmegaConfig | None = None) -> list[ToolDefinition]:
         ToolDefinition("git_status", "Git status", "Affiche le statut git du workspace.", {"type": "object", "properties": {}}, "git", "low", True, False),
         ToolDefinition("git_diff", "Git diff", "Affiche le diff git du workspace.", {"type": "object", "properties": {}}, "git", "medium", True, False),
         ToolDefinition("git_log", "Git log", "Affiche l'historique git recent.", {"type": "object", "properties": {}}, "git", "low", True, False),
+        ToolDefinition("git_branch", "Git branch", "Affiche les branches git locales.", {"type": "object", "properties": {}}, "git", "low", True, False),
+        ToolDefinition("git_show", "Git show", "Affiche un objet git sans ecriture.", {"type": "object", "properties": {"ref": {"type": "string"}}}, "git", "medium", True, False),
         ToolDefinition("git_add", "Git add", "Ajoute des fichiers git dans le workspace.", {"type": "object", "properties": {"relative_path": {"type": "string"}}}, "git", "high", git_write_enabled, write_approval),
         ToolDefinition("git_commit", "Git commit", "Cree un commit git dans le workspace.", {"type": "object", "properties": {"message": {"type": "string"}}}, "git", "high", git_write_enabled, write_approval),
+        ToolDefinition("git_restore_file", "Git restore file", "Restaure un fichier versionne depuis git dans le workspace.", {"type": "object", "properties": {"relative_path": {"type": "string"}}}, "git", "high", git_write_enabled, write_approval),
         ToolDefinition("system_info", "System info", "Affiche les informations systeme non sensibles.", {"type": "object", "properties": {}}, "system", "low", True, False),
         ToolDefinition("delegate_to_agent", "Delegate to agent", "Delegue une sous-tache a un profil agent enfant sans escalade de permissions.", {"type": "object", "properties": {"child_agent_id": {"type": "string"}, "task": {"type": "string"}, "max_steps": {"type": "integer"}, "allowed_tools": {"type": "array", "items": {"type": "string"}}}}, "agent", "medium", True, False),
+        ToolDefinition(
+            "invoke_connector_operation",
+            "Invoke connector operation",
+            "Appelle une operation de connecteur API-first activee et gouvernee par policy.",
+            {
+                "type": "object",
+                "properties": {
+                    "connector_id": {"type": "string"},
+                    "operation_id": {"type": "string"},
+                    "arguments": {"type": "object"},
+                },
+                "required": ["connector_id", "operation_id"],
+            },
+            "connector",
+            "high",
+            bool(config.connectors_enabled) if config is not None else True,
+            False,
+        ),
     ]
     if config is not None and config.browser_enabled:
         tools.extend(
@@ -118,8 +140,11 @@ HANDLERS = {
     "git_status": lambda cfg, args: git_status(cfg),
     "git_diff": lambda cfg, args: git_diff(cfg),
     "git_log": lambda cfg, args: git_log(cfg),
+    "git_branch": lambda cfg, args: git_branch(cfg),
+    "git_show": lambda cfg, args: git_show(cfg, str(args.get("ref", "HEAD"))),
     "git_add": lambda cfg, args: git_add(cfg, str(args.get("relative_path", "."))),
     "git_commit": lambda cfg, args: git_commit(cfg, str(args.get("message", ""))),
+    "git_restore_file": lambda cfg, args: git_restore_file(cfg, str(args.get("relative_path", ""))),
     "system_info": lambda cfg, args: system_info(cfg),
     "browser_open_url": lambda cfg, args: _browser_open_url(cfg, str(args.get("url", ""))),
     "browser_get_title": lambda cfg, args: _browser_get_title(cfg),
@@ -133,4 +158,9 @@ HANDLERS = {
     "desktop_click": lambda cfg, args: _desktop_click(cfg, int(args.get("x", 0)), int(args.get("y", 0))),
     "desktop_type": lambda cfg, args: _desktop_type(cfg, str(args.get("text", "")), float(args.get("interval", 0.02))),
     "desktop_hotkey": lambda cfg, args: _desktop_hotkey(cfg, args.get("keys", [])),
+    "invoke_connector_operation": lambda cfg, args: ConnectorsRegistry(cfg).invoke_operation(
+        str(args.get("connector_id", "")),
+        str(args.get("operation_id", "")),
+        dict(args.get("arguments") or {}),
+    ),
 }

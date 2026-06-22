@@ -21,6 +21,7 @@ class OmegaConfig:
     port: int = 8765
     open_browser: bool = True
     ui_theme: str = "dark"
+    mobile_mode: str = "tailscale"
     skills_dir: Path | None = None
     plugins_dir: Path | None = None
     db_path: Path | None = None
@@ -47,6 +48,98 @@ class OmegaConfig:
     desktop_screenshots_dir: Path | None = None
     reasoning_stream: bool = True
     reasoning_detail: str = "minimal"
+    runtime_checkpoints_enabled: bool = True
+    runtime_snapshots_enabled: bool = True
+    runtime_snapshots_max_file_size_mb: int = 10
+    runtime_snapshots_keep_days: int = 30
+    runtime_replay_enabled: bool = True
+    runtime_resume_interrupted_runs: bool = False
+    runtime_max_tool_iterations: int = 5
+    runtime_max_actions_per_turn: int = 10
+    runtime_max_run_seconds: int = 300
+    runtime_dead_letter_enabled: bool = True
+    capabilities_enabled: bool = True
+    capabilities_max_in_context: int = 20
+    capabilities_mcp_enabled: bool = False
+    capabilities_a2a_enabled: bool = False
+    capabilities_untrusted_disabled_by_default: bool = True
+    capabilities_usage_logging: bool = True
+    memory_enabled: bool = True
+    memory_project_memory_enabled: bool = True
+    memory_auto_capture_decisions: bool = True
+    memory_auto_capture_tool_lessons: bool = True
+    memory_max_context_memories: int = 8
+    memory_default_ttl_days: int | None = None
+    memory_redaction_enabled: bool = True
+    memory_require_provenance: bool = True
+    memory_compaction_enabled: bool = True
+    code_enabled: bool = True
+    code_auto_scan: bool = True
+    code_test_timeout_seconds: int = 120
+    code_max_output_chars: int = 12000
+    code_allow_npm_install: bool = True
+    code_allow_pip_install: bool = True
+    code_allow_git_commit: bool = True
+    code_allow_git_push: bool = False
+    self_healing_enabled: bool = True
+    self_healing_max_attempts: int = 1
+    self_healing_auto_apply_safe_recoveries: bool = False
+    evals_enabled: bool = True
+    evals_auto_score_runs: bool = True
+    evals_collect_metrics: bool = True
+    evals_redact_traces: bool = True
+    evals_max_trace_chars: int = 20000
+    evals_failure_clustering_enabled: bool = True
+    evals_default_dataset_dir: Path | None = None
+    evals_report_dir: Path | None = None
+    workflows_enabled: bool = True
+    workflows_max_steps: int = 30
+    workflows_max_duration_seconds: int = 900
+    workflows_allow_nested_workflows: bool = False
+    workflows_templates_enabled: bool = True
+    workflows_require_approval_for_destructive_steps: bool = True
+    connectors_enabled: bool = True
+    connectors_openapi_import_enabled: bool = True
+    connectors_untrusted_disabled_by_default: bool = True
+    connectors_max_response_chars: int = 20000
+    connectors_timeout_seconds: int = 30
+    connectors_github_enabled: bool = False
+    connectors_local_http_enabled: bool = False
+    connectors_browser_fallback_enabled: bool = False
+    events_enabled: bool = True
+    events_persist: bool = True
+    events_replay_enabled: bool = True
+    events_max_replay_events: int = 500
+    events_redaction_enabled: bool = True
+    events_websocket_heartbeat_seconds: int = 20
+    research_enabled: bool = True
+    research_max_sources: int = 20
+    research_max_claims: int = 50
+    research_require_evidence_for_claims: bool = True
+    research_export_dir: str = "research_reports"
+    research_web_enabled: bool = False
+    research_external_sources_untrusted: bool = True
+    skills_enabled: bool = True
+    skills_foundry_enabled: bool = True
+    skills_auto_detect_candidates: bool = False
+    skills_min_successful_runs_for_candidate: int = 2
+    skills_require_user_approval_for_promotion: bool = True
+    skills_max_skills_in_context: int = 5
+    skills_test_before_activation: bool = True
+    governance_budgets_enabled: bool = True
+    governance_budgets_default_profile: str = "Default Local"
+    governance_budgets_enforce: bool = True
+    governance_budgets_warning_threshold: float = 0.8
+    governance_risk_governor_enabled: bool = True
+    governance_risk_governor_default_max_risk: str = "high"
+    shadow_enabled: bool = True
+    shadow_require_for_high_risk: bool = True
+    shadow_require_for_workflows_over_steps: int = 5
+    shadow_workspace_keep_days: int = 3
+    shadow_max_shadow_seconds: int = 300
+    shadow_allow_shell_in_shadow: bool = True
+    shadow_auto_promote_low_risk: bool = False
+    shadow_compare_after_live: bool = True
     fast_mode: bool = True
     streaming: bool = True
     perf_logging: bool = True
@@ -89,6 +182,10 @@ class OmegaConfig:
     def ensure_dirs(self) -> None:
         self.workspace.mkdir(parents=True, exist_ok=True)
         (self.workspace / ".omega").mkdir(parents=True, exist_ok=True)
+        if self.evals_default_dataset_dir:
+            self.evals_default_dataset_dir.mkdir(parents=True, exist_ok=True)
+        if self.evals_report_dir:
+            self.evals_report_dir.mkdir(parents=True, exist_ok=True)
 
     @classmethod
     def from_env(cls) -> "OmegaConfig":
@@ -117,6 +214,7 @@ class OmegaConfig:
             port=_parse_port(source.get("OMEGA_PORT", "8765", "gateway.port")),
             open_browser=_parse_bool(source.get("OMEGA_OPEN_BROWSER", "true", "app.open_browser")),
             ui_theme=source.get("OMEGA_UI_THEME", "dark", "app.ui_theme").strip() or "dark",
+            mobile_mode=_parse_mobile_mode(source.get("OMEGA_MOBILE_MODE", "tailscale", "mobile.mode")),
             skills_dir=Path(source.get("OMEGA_SKILLS_DIR", "~/omega_skills", "paths.skills_dir").strip()).expanduser().resolve(),
             plugins_dir=Path(source.get("OMEGA_PLUGINS_DIR", "~/omega_plugins", "paths.plugins_dir").strip()).expanduser().resolve(),
             db_path=Path(source.get("OMEGA_DB_PATH", "~/.omega/omega.db", "paths.db_path").strip()).expanduser().resolve(),
@@ -143,6 +241,98 @@ class OmegaConfig:
             desktop_screenshots_dir=Path(source.get("OMEGA_DESKTOP_SCREENSHOTS_DIR", str(workspace / ".omega" / "screenshots")).strip()).expanduser().resolve(),
             reasoning_stream=_parse_bool(source.get("OMEGA_REASONING_STREAM", "true", "reasoning.stream")),
             reasoning_detail=_parse_reasoning_detail(source.get("OMEGA_REASONING_DETAIL", "minimal", "reasoning.detail")),
+            runtime_checkpoints_enabled=_parse_bool(source.get("OMEGA_RUNTIME_CHECKPOINTS_ENABLED", "true", "runtime.checkpoints.enabled")),
+            runtime_snapshots_enabled=_parse_bool(source.get("OMEGA_RUNTIME_SNAPSHOTS_ENABLED", "true", "runtime.snapshots.enabled")),
+            runtime_snapshots_max_file_size_mb=max(1, _parse_int(source.get("OMEGA_RUNTIME_SNAPSHOTS_MAX_FILE_SIZE_MB", "10", "runtime.snapshots.max_file_size_mb"), 10)),
+            runtime_snapshots_keep_days=max(1, _parse_int(source.get("OMEGA_RUNTIME_SNAPSHOTS_KEEP_DAYS", "30", "runtime.snapshots.keep_days"), 30)),
+            runtime_replay_enabled=_parse_bool(source.get("OMEGA_RUNTIME_REPLAY_ENABLED", "true", "runtime.replay.enabled")),
+            runtime_resume_interrupted_runs=_parse_bool(source.get("OMEGA_RUNTIME_RESUME_INTERRUPTED_RUNS", "false", "runtime.resume_interrupted_runs")),
+            runtime_max_tool_iterations=max(1, _parse_int(source.get("OMEGA_RUNTIME_MAX_TOOL_ITERATIONS", "5", "runtime.max_tool_iterations"), 5)),
+            runtime_max_actions_per_turn=max(1, _parse_int(source.get("OMEGA_RUNTIME_MAX_ACTIONS_PER_TURN", "10", "runtime.max_actions_per_turn"), 10)),
+            runtime_max_run_seconds=max(1, _parse_int(source.get("OMEGA_RUNTIME_MAX_RUN_SECONDS", "300", "runtime.max_run_seconds"), 300)),
+            runtime_dead_letter_enabled=_parse_bool(source.get("OMEGA_RUNTIME_DEAD_LETTER_ENABLED", "true", "runtime.dead_letter_enabled")),
+            capabilities_enabled=_parse_bool(source.get("OMEGA_CAPABILITIES_ENABLED", "true", "capabilities.enabled")),
+            capabilities_max_in_context=max(1, _parse_int(source.get("OMEGA_CAPABILITIES_MAX_IN_CONTEXT", "20", "capabilities.max_in_context"), 20)),
+            capabilities_mcp_enabled=_parse_bool(source.get("OMEGA_CAPABILITIES_MCP_ENABLED", "false", "capabilities.mcp_enabled")),
+            capabilities_a2a_enabled=_parse_bool(source.get("OMEGA_CAPABILITIES_A2A_ENABLED", "false", "capabilities.a2a_enabled")),
+            capabilities_untrusted_disabled_by_default=_parse_bool(source.get("OMEGA_CAPABILITIES_UNTRUSTED_DISABLED_BY_DEFAULT", "true", "capabilities.untrusted_disabled_by_default")),
+            capabilities_usage_logging=_parse_bool(source.get("OMEGA_CAPABILITIES_USAGE_LOGGING", "true", "capabilities.usage_logging")),
+            memory_enabled=_parse_bool(source.get("OMEGA_MEMORY_ENABLED", "true", "memory.enabled")),
+            memory_project_memory_enabled=_parse_bool(source.get("OMEGA_MEMORY_PROJECT_MEMORY_ENABLED", "true", "memory.project_memory_enabled")),
+            memory_auto_capture_decisions=_parse_bool(source.get("OMEGA_MEMORY_AUTO_CAPTURE_DECISIONS", "true", "memory.auto_capture_decisions")),
+            memory_auto_capture_tool_lessons=_parse_bool(source.get("OMEGA_MEMORY_AUTO_CAPTURE_TOOL_LESSONS", "true", "memory.auto_capture_tool_lessons")),
+            memory_max_context_memories=max(1, _parse_int(source.get("OMEGA_MEMORY_MAX_CONTEXT_MEMORIES", "8", "memory.max_context_memories"), 8)),
+            memory_default_ttl_days=_parse_optional_positive_int(source.get("OMEGA_MEMORY_DEFAULT_TTL_DAYS", "", "memory.default_ttl_days")),
+            memory_redaction_enabled=_parse_bool(source.get("OMEGA_MEMORY_REDACTION_ENABLED", "true", "memory.redaction_enabled")),
+            memory_require_provenance=_parse_bool(source.get("OMEGA_MEMORY_REQUIRE_PROVENANCE", "true", "memory.require_provenance")),
+            memory_compaction_enabled=_parse_bool(source.get("OMEGA_MEMORY_COMPACTION_ENABLED", "true", "memory.compaction_enabled")),
+            code_enabled=_parse_bool(source.get("OMEGA_CODE_ENABLED", "true", "code.enabled")),
+            code_auto_scan=_parse_bool(source.get("OMEGA_CODE_AUTO_SCAN", "true", "code.auto_scan")),
+            code_test_timeout_seconds=max(1, _parse_int(source.get("OMEGA_CODE_TEST_TIMEOUT_SECONDS", "120", "code.test_timeout_seconds"), 120)),
+            code_max_output_chars=max(1000, _parse_int(source.get("OMEGA_CODE_MAX_OUTPUT_CHARS", "12000", "code.max_output_chars"), 12000)),
+            code_allow_npm_install=_parse_bool(source.get("OMEGA_CODE_ALLOW_NPM_INSTALL", "true", "code.allow_npm_install")),
+            code_allow_pip_install=_parse_bool(source.get("OMEGA_CODE_ALLOW_PIP_INSTALL", "true", "code.allow_pip_install")),
+            code_allow_git_commit=_parse_bool(source.get("OMEGA_CODE_ALLOW_GIT_COMMIT", "true", "code.allow_git_commit")),
+            code_allow_git_push=_parse_bool(source.get("OMEGA_CODE_ALLOW_GIT_PUSH", "false", "code.allow_git_push")),
+            self_healing_enabled=_parse_bool(source.get("OMEGA_SELF_HEALING_ENABLED", "true", "self_healing.enabled")),
+            self_healing_max_attempts=max(0, _parse_int(source.get("OMEGA_SELF_HEALING_MAX_ATTEMPTS", "1", "self_healing.max_attempts"), 1)),
+            self_healing_auto_apply_safe_recoveries=_parse_bool(source.get("OMEGA_SELF_HEALING_AUTO_APPLY_SAFE_RECOVERIES", "false", "self_healing.auto_apply_safe_recoveries")),
+            evals_enabled=_parse_bool(source.get("OMEGA_EVALS_ENABLED", "true", "evals.enabled")),
+            evals_auto_score_runs=_parse_bool(source.get("OMEGA_EVALS_AUTO_SCORE_RUNS", "true", "evals.auto_score_runs")),
+            evals_collect_metrics=_parse_bool(source.get("OMEGA_EVALS_COLLECT_METRICS", "true", "evals.collect_metrics")),
+            evals_redact_traces=_parse_bool(source.get("OMEGA_EVALS_REDACT_TRACES", "true", "evals.redact_traces")),
+            evals_max_trace_chars=max(1000, _parse_int(source.get("OMEGA_EVALS_MAX_TRACE_CHARS", "20000", "evals.max_trace_chars"), 20000)),
+            evals_failure_clustering_enabled=_parse_bool(source.get("OMEGA_EVALS_FAILURE_CLUSTERING_ENABLED", "true", "evals.failure_clustering_enabled")),
+            evals_default_dataset_dir=Path(source.get("OMEGA_EVALS_DEFAULT_DATASET_DIR", "~/.omega/evals", "evals.default_dataset_dir").strip()).expanduser().resolve(),
+            evals_report_dir=Path(source.get("OMEGA_EVALS_REPORT_DIR", "~/.omega/eval_reports", "evals.report_dir").strip()).expanduser().resolve(),
+            workflows_enabled=_parse_bool(source.get("OMEGA_WORKFLOWS_ENABLED", "true", "workflows.enabled")),
+            workflows_max_steps=max(1, _parse_int(source.get("OMEGA_WORKFLOWS_MAX_STEPS", "30", "workflows.max_steps"), 30)),
+            workflows_max_duration_seconds=max(1, _parse_int(source.get("OMEGA_WORKFLOWS_MAX_DURATION_SECONDS", "900", "workflows.max_duration_seconds"), 900)),
+            workflows_allow_nested_workflows=_parse_bool(source.get("OMEGA_WORKFLOWS_ALLOW_NESTED_WORKFLOWS", "false", "workflows.allow_nested_workflows")),
+            workflows_templates_enabled=_parse_bool(source.get("OMEGA_WORKFLOWS_TEMPLATES_ENABLED", "true", "workflows.templates_enabled")),
+            workflows_require_approval_for_destructive_steps=_parse_bool(source.get("OMEGA_WORKFLOWS_REQUIRE_APPROVAL_FOR_DESTRUCTIVE_STEPS", "true", "workflows.require_approval_for_destructive_steps")),
+            connectors_enabled=_parse_bool(source.get("OMEGA_CONNECTORS_ENABLED", "true", "connectors.enabled")),
+            connectors_openapi_import_enabled=_parse_bool(source.get("OMEGA_CONNECTORS_OPENAPI_IMPORT_ENABLED", "true", "connectors.openapi_import_enabled")),
+            connectors_untrusted_disabled_by_default=_parse_bool(source.get("OMEGA_CONNECTORS_UNTRUSTED_DISABLED_BY_DEFAULT", "true", "connectors.untrusted_disabled_by_default")),
+            connectors_max_response_chars=max(1000, _parse_int(source.get("OMEGA_CONNECTORS_MAX_RESPONSE_CHARS", "20000", "connectors.max_response_chars"), 20000)),
+            connectors_timeout_seconds=max(1, _parse_int(source.get("OMEGA_CONNECTORS_TIMEOUT_SECONDS", "30", "connectors.timeout_seconds"), 30)),
+            connectors_github_enabled=_parse_bool(source.get("OMEGA_CONNECTORS_GITHUB_ENABLED", "false", "connectors.github.enabled")),
+            connectors_local_http_enabled=_parse_bool(source.get("OMEGA_CONNECTORS_LOCAL_HTTP_ENABLED", "false", "connectors.local_http.enabled")),
+            connectors_browser_fallback_enabled=_parse_bool(source.get("OMEGA_CONNECTORS_BROWSER_FALLBACK_ENABLED", "false", "connectors.browser_fallback_enabled")),
+            events_enabled=_parse_bool(source.get("OMEGA_EVENTS_ENABLED", "true", "events.enabled")),
+            events_persist=_parse_bool(source.get("OMEGA_EVENTS_PERSIST", "true", "events.persist")),
+            events_replay_enabled=_parse_bool(source.get("OMEGA_EVENTS_REPLAY_ENABLED", "true", "events.replay_enabled")),
+            events_max_replay_events=max(1, _parse_int(source.get("OMEGA_EVENTS_MAX_REPLAY_EVENTS", "500", "events.max_replay_events"), 500)),
+            events_redaction_enabled=_parse_bool(source.get("OMEGA_EVENTS_REDACTION_ENABLED", "true", "events.redaction_enabled")),
+            events_websocket_heartbeat_seconds=max(5, _parse_int(source.get("OMEGA_EVENTS_WEBSOCKET_HEARTBEAT_SECONDS", "20", "events.websocket_heartbeat_seconds"), 20)),
+            research_enabled=_parse_bool(source.get("OMEGA_RESEARCH_ENABLED", "true", "research.enabled")),
+            research_max_sources=max(1, _parse_int(source.get("OMEGA_RESEARCH_MAX_SOURCES", "20", "research.max_sources"), 20)),
+            research_max_claims=max(1, _parse_int(source.get("OMEGA_RESEARCH_MAX_CLAIMS", "50", "research.max_claims"), 50)),
+            research_require_evidence_for_claims=_parse_bool(source.get("OMEGA_RESEARCH_REQUIRE_EVIDENCE_FOR_CLAIMS", "true", "research.require_evidence_for_claims")),
+            research_export_dir=source.get("OMEGA_RESEARCH_EXPORT_DIR", "research_reports", "research.export_dir").strip() or "research_reports",
+            research_web_enabled=_parse_bool(source.get("OMEGA_RESEARCH_WEB_ENABLED", "false", "research.web_enabled")),
+            research_external_sources_untrusted=_parse_bool(source.get("OMEGA_RESEARCH_EXTERNAL_SOURCES_UNTRUSTED", "true", "research.external_sources_untrusted")),
+            skills_enabled=_parse_bool(source.get("OMEGA_SKILLS_ENABLED", "true", "skills.enabled")),
+            skills_foundry_enabled=_parse_bool(source.get("OMEGA_SKILLS_FOUNDRY_ENABLED", "true", "skills.foundry_enabled")),
+            skills_auto_detect_candidates=_parse_bool(source.get("OMEGA_SKILLS_AUTO_DETECT_CANDIDATES", "false", "skills.auto_detect_candidates")),
+            skills_min_successful_runs_for_candidate=max(2, _parse_int(source.get("OMEGA_SKILLS_MIN_SUCCESSFUL_RUNS_FOR_CANDIDATE", "2", "skills.min_successful_runs_for_candidate"), 2)),
+            skills_require_user_approval_for_promotion=_parse_bool(source.get("OMEGA_SKILLS_REQUIRE_USER_APPROVAL_FOR_PROMOTION", "true", "skills.require_user_approval_for_promotion")),
+            skills_max_skills_in_context=max(1, _parse_int(source.get("OMEGA_SKILLS_MAX_SKILLS_IN_CONTEXT", "5", "skills.max_skills_in_context"), 5)),
+            skills_test_before_activation=_parse_bool(source.get("OMEGA_SKILLS_TEST_BEFORE_ACTIVATION", "true", "skills.test_before_activation")),
+            governance_budgets_enabled=_parse_bool(source.get("OMEGA_GOVERNANCE_BUDGETS_ENABLED", "true", "governance.budgets.enabled")),
+            governance_budgets_default_profile=source.get("OMEGA_GOVERNANCE_BUDGETS_DEFAULT_PROFILE", "Default Local", "governance.budgets.default_profile").strip() or "Default Local",
+            governance_budgets_enforce=_parse_bool(source.get("OMEGA_GOVERNANCE_BUDGETS_ENFORCE", "true", "governance.budgets.enforce")),
+            governance_budgets_warning_threshold=max(0.1, min(1.0, _parse_float(source.get("OMEGA_GOVERNANCE_BUDGETS_WARNING_THRESHOLD", "0.8", "governance.budgets.warning_threshold"), 0.8))),
+            governance_risk_governor_enabled=_parse_bool(source.get("OMEGA_GOVERNANCE_RISK_GOVERNOR_ENABLED", "true", "governance.risk_governor.enabled")),
+            governance_risk_governor_default_max_risk=source.get("OMEGA_GOVERNANCE_RISK_GOVERNOR_DEFAULT_MAX_RISK", "high", "governance.risk_governor.default_max_risk").strip().lower() or "high",
+            shadow_enabled=_parse_bool(source.get("OMEGA_SHADOW_ENABLED", "true", "shadow.enabled")),
+            shadow_require_for_high_risk=_parse_bool(source.get("OMEGA_SHADOW_REQUIRE_FOR_HIGH_RISK", "true", "shadow.require_for_high_risk")),
+            shadow_require_for_workflows_over_steps=max(1, _parse_nonnegative_int(source.get("OMEGA_SHADOW_REQUIRE_FOR_WORKFLOWS_OVER_STEPS", "5", "shadow.require_for_workflows_over_steps"), 5)),
+            shadow_workspace_keep_days=max(0, _parse_nonnegative_int(source.get("OMEGA_SHADOW_WORKSPACE_KEEP_DAYS", "3", "shadow.workspace_keep_days"), 3)),
+            shadow_max_shadow_seconds=max(1, _parse_nonnegative_int(source.get("OMEGA_SHADOW_MAX_SHADOW_SECONDS", "300", "shadow.max_shadow_seconds"), 300)),
+            shadow_allow_shell_in_shadow=_parse_bool(source.get("OMEGA_SHADOW_ALLOW_SHELL_IN_SHADOW", "true", "shadow.allow_shell_in_shadow")),
+            shadow_auto_promote_low_risk=_parse_bool(source.get("OMEGA_SHADOW_AUTO_PROMOTE_LOW_RISK", "false", "shadow.auto_promote_low_risk")),
+            shadow_compare_after_live=_parse_bool(source.get("OMEGA_SHADOW_COMPARE_AFTER_LIVE", "true", "shadow.compare_after_live")),
             fast_mode=_parse_bool(source.get("OMEGA_FAST_MODE", "true", "performance.fast_mode")),
             streaming=_parse_bool(source.get("OMEGA_STREAMING", "true", "performance.streaming")),
             perf_logging=_parse_bool(source.get("OMEGA_PERF_LOGGING", "true")),
@@ -261,6 +451,13 @@ def _parse_reasoning_detail(value: str) -> str:
     return detail
 
 
+def _parse_mobile_mode(value: str) -> str:
+    mode = value.strip().lower() or "tailscale"
+    if mode not in {"tailscale", "off"}:
+        raise ValueError("mobile.mode doit valoir tailscale ou off.")
+    return mode
+
+
 def _legacy_model_ref(provider: str, model: str) -> str:
     model = model.strip() or "gpt-5.5"
     if "/" in model and model.split("/", 1)[0] in VALID_PROVIDERS:
@@ -296,5 +493,19 @@ def _parse_int(value: str, default: int) -> int:
         raise ValueError("Valeur entiere invalide.") from exc
 
 
+def _parse_float(value: str, default: float) -> float:
+    try:
+        return float(value.strip() or str(default))
+    except ValueError as exc:
+        raise ValueError("Valeur numerique invalide.") from exc
+
+
 def _parse_nonnegative_int(value: str, default: int) -> int:
     return max(0, _parse_int(value, default))
+
+
+def _parse_optional_positive_int(value: str) -> int | None:
+    stripped = value.strip()
+    if stripped.lower() in {"", "none", "null"}:
+        return None
+    return max(1, _parse_int(stripped, 1))

@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 from omega_agent.config import OmegaConfig
+from omega_agent.runtime.context import current_runtime_mode
 from omega_agent.runtime.jobs import JobsStore
 from omega_agent.runtime.storage import connect_runtime_db
 from omega_agent.security import log_action
@@ -239,7 +240,7 @@ class SchedulerLoop:
         self._task: asyncio.Task | None = None
 
     def start(self) -> None:
-        if not self.config.scheduler_enabled:
+        if current_runtime_mode() != "server" or not self.config.scheduler_enabled:
             return
         if self._task is None or self._task.done():
             self._task = asyncio.create_task(self._run(), name="omega-scheduler")

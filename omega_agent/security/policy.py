@@ -52,7 +52,7 @@ BLOCKED_COMMANDS = {
     "stop-computer",
 }
 ALLOWED_COMMANDS = {"pwd", "ls", "dir", "cat", "type", "head", "tail", "pytest", "git"}
-ALLOWED_GIT_SUBCOMMANDS = {"status", "diff", "log", "show"}
+ALLOWED_GIT_SUBCOMMANDS = {"status", "diff", "log", "show", "branch"}
 FULL_ACCESS_COMMANDS = {
     "pwd",
     "ls",
@@ -80,7 +80,7 @@ FULL_ACCESS_COMMANDS = {
     "powershell",
     "pwsh",
 }
-FULL_ACCESS_GIT_SUBCOMMANDS = {"status", "diff", "log", "show", "add", "commit"}
+FULL_ACCESS_GIT_SUBCOMMANDS = {"status", "diff", "log", "show", "branch", "add", "commit", "restore"}
 SHELL_METACHARS = set("|&;<>()`")
 DENIED_COMMAND_FRAGMENTS = (
     "invoke-webrequest",
@@ -119,8 +119,11 @@ WORKSPACE_FULL_ACCESS_TOOLS = {
     "git_status",
     "git_diff",
     "git_log",
+    "git_branch",
+    "git_show",
     "git_add",
     "git_commit",
+    "git_restore_file",
 }
 
 
@@ -130,6 +133,11 @@ class PolicyDecision:
     reason: str
     risk_level: str = "low"
     redacted_arguments: dict | None = None
+    matched_rules: list[dict] | None = None
+    warnings: list[str] | None = None
+    action_category: str | None = None
+    budget_decision: dict | None = None
+    shadow_required: bool = False
 
     @property
     def decision(self) -> str:
@@ -205,7 +213,7 @@ def parse_command(command: str, *, full_access: bool = False, allow_git_write: b
     return args
 
 
-def workspace_policy_decision(config: OmegaConfig, tool_name: str, arguments: dict | None = None, require_approval: bool = True) -> PolicyDecision:
+def _base_workspace_policy_decision(config: OmegaConfig, tool_name: str, arguments: dict | None = None, require_approval: bool = True) -> PolicyDecision:
     args = arguments or {}
     try:
         _validate_workspace_tool_request(config, tool_name, args)
@@ -214,6 +222,38 @@ def workspace_policy_decision(config: OmegaConfig, tool_name: str, arguments: di
     if config.workspace_full_access and tool_name in WORKSPACE_FULL_ACCESS_TOOLS:
         return PolicyDecision("allow", "Workspace Full Access actif.", "low", redact(args))
     return decide(tool_name, args, require_approval=require_approval)
+
+
+def workspace_policy_decision(
+    config: OmegaConfig,
+    tool_name: str,
+    arguments: dict | None = None,
+    require_approval: bool = True,
+    context: dict | None = None,
+) -> PolicyDecision:
+    args = arguments or {}
+    try:
+        from omega_agent.security.policy_simulator import PolicySimulator
+
+        payload = {"tool_name": tool_name, "arguments": args, **(context or {})}
+        result = PolicySimulator(config).simulate_policy(payload, store=False)
+        action = result["final_decision"]
+        explicit_approval = any(rule.get("effect") == "require_approval" for rule in (result.get("matched_rules") or []))
+        if action == "require_approval" and not require_approval and not explicit_approval:
+            action = "allow"
+        return PolicyDecision(
+            action,
+            result.get("reason") or "",
+            result.get("risk_level") or "low",
+            redact(args),
+            matched_rules=result.get("matched_rules") or [],
+            warnings=result.get("warnings") or [],
+            action_category=result.get("action_category"),
+            budget_decision=None,
+            shadow_required=bool(result.get("shadow_required")),
+        )
+    except Exception:
+        return _base_workspace_policy_decision(config, tool_name, args, require_approval=require_approval)
 
 
 def _validate_workspace_tool_request(config: OmegaConfig, tool_name: str, arguments: dict) -> None:
@@ -231,7 +271,7 @@ def _validate_workspace_tool_request(config: OmegaConfig, tool_name: str, argume
             full_access=config.workspace_full_access and config.shell_full_access_in_workspace,
             allow_git_write=config.allow_git_write_in_workspace,
         )
-    elif tool_name in {"git_status", "git_diff", "git_log"}:
+    elif tool_name in {"git_status", "git_diff", "git_log", "git_branch", "git_show"}:
         parse_command("git status")
     elif tool_name == "git_add":
         if not config.allow_git_write_in_workspace:
@@ -240,6 +280,10 @@ def _validate_workspace_tool_request(config: OmegaConfig, tool_name: str, argume
     elif tool_name == "git_commit":
         if not config.allow_git_write_in_workspace:
             raise PermissionError("Git commit refuse par configuration.")
+    elif tool_name == "git_restore_file":
+        if not config.allow_git_write_in_workspace:
+            raise PermissionError("Git restore refuse par configuration.")
+        safe_path(config, str(arguments.get("relative_path", "")))
 
 
 def decide(tool_name: str, arguments: dict | None = None, require_approval: bool = True) -> PolicyDecision:

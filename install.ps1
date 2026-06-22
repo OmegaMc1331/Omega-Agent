@@ -122,6 +122,7 @@ function Configure-OmegaConfig([string]$Root, [string]$Workspace, [bool]$OpenBro
         version = 1
         app = [ordered]@{ name = "Omega Agent"; language = "fr"; open_browser = $OpenBrowser; ui_theme = "dark" }
         gateway = [ordered]@{ host = "127.0.0.1"; port = 8765 }
+        mobile = [ordered]@{ mode = "tailscale" }
         workspace = [ordered]@{
             path = $Workspace
             full_access = $true
@@ -149,6 +150,46 @@ function Configure-OmegaConfig([string]$Root, [string]$Workspace, [bool]$OpenBro
         }
         scheduler = [ordered]@{ enabled = $false; tick_seconds = 30 }
         reasoning = [ordered]@{ stream = $true; detail = "minimal" }
+        research = [ordered]@{
+            enabled = $true
+            max_sources = 20
+            max_claims = 50
+            require_evidence_for_claims = $true
+            export_dir = "research_reports"
+            web_enabled = $false
+            external_sources_untrusted = $true
+        }
+        skills = [ordered]@{
+            enabled = $true
+            foundry_enabled = $true
+            auto_detect_candidates = $false
+            min_successful_runs_for_candidate = 2
+            require_user_approval_for_promotion = $true
+            max_skills_in_context = 5
+            test_before_activation = $true
+        }
+        governance = [ordered]@{
+            budgets = [ordered]@{
+                enabled = $true
+                default_profile = "Default Local"
+                enforce = $true
+                warning_threshold = 0.8
+            }
+            risk_governor = [ordered]@{
+                enabled = $true
+                default_max_risk = "high"
+            }
+        }
+        shadow = [ordered]@{
+            enabled = $true
+            require_for_high_risk = $true
+            require_for_workflows_over_steps = 5
+            workspace_keep_days = 3
+            max_shadow_seconds = 300
+            allow_shell_in_shadow = $true
+            auto_promote_low_risk = $false
+            compare_after_live = $true
+        }
         performance = [ordered]@{
             fast_mode = $true; streaming = $true; status_cache_seconds = 60
             max_history_messages = 20; max_memory_results = 5; max_skills_in_context = 5; max_tool_descriptions = 20

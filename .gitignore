@@ -3,4 +3,8 @@
 __pycache__/
 *.pyc
 .pytest_cache/
+.pytest-tmp/
+.smoke/
+.tmp/
+.omega/
 .DS_Store

@@ -7,7 +7,7 @@ from uuid import uuid4
 
 from omega_agent.config import OmegaConfig
 from omega_agent.runtime.events import EventsStore
-from omega_agent.runtime.memory import MemoryStore
+from omega_agent.runtime.memory_compaction import compact_project_memory
 from omega_agent.runtime.sessions import SessionsStore
 from omega_agent.runtime.storage import connect_runtime_db
 from omega_agent.security import log_action
@@ -104,8 +104,9 @@ class JobsStore:
                     break
             return {"files": files, "count": len(files)}, ["Workspace scanne sans lire les contenus."]
         if kind in {"memory_compaction", "compact_memory"}:
-            memories = MemoryStore(self.config).search(limit=200)
-            return {"memories": len(memories)}, ["Compaction v0.1: analyse seulement."]
+            project_id = str(input_data.get("project_id") or "default")
+            result = compact_project_memory(self.config, project_id)
+            return result, [f"Compaction memoire projet terminee pour {project_id}."]
         if kind == "run_scheduled_prompt":
             prompt = str(input_data.get("prompt") or "")
             session_id = str(input_data.get("session_id") or "")

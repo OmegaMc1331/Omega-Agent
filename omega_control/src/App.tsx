@@ -9,6 +9,7 @@ import {
   ChevronRight,
   CirclePlus,
   Clock3,
+  Code2,
   Cpu,
   Database,
   FileText,
@@ -24,6 +25,8 @@ import {
   Plug,
   RefreshCw,
   ScrollText,
+  ScanSearch,
+  Search,
   Send,
   Settings,
   Shield,
@@ -38,9 +41,45 @@ import { api } from './api/client';
 import { ModelSelector, type CurrentModelView } from './components/ModelSelector';
 import type { ModelView } from './components/ModelCard';
 import type { ProviderView } from './components/ProviderCard';
+import { A2AAgentsPage } from './pages/A2AAgents';
+import { CapabilitiesPage } from './pages/Capabilities';
+import { ConnectorDetailsPage } from './pages/ConnectorDetails';
+import { ConnectorsPage } from './pages/Connectors';
+import { CodeWorkspacePage } from './pages/CodeWorkspace';
+import { DecisionsPage } from './pages/Decisions';
+import { EventInspectorPage } from './pages/EventInspector';
+import { EvalsPage } from './pages/Evals';
+import { FailureClustersPage } from './pages/FailureClusters';
+import { MCPServersPage } from './pages/MCPServers';
+import { MemoryPage } from './pages/Memory';
+import { MetricsPage } from './pages/Metrics';
 import { ModelsPage, type ModelPreferenceView, type ModelUsageView } from './pages/Models';
+import { OpenAPIImportPage } from './pages/OpenAPIImport';
+import { PolicyProfilesPage } from './pages/PolicyProfiles';
+import { PolicySimulatorPage } from './pages/PolicySimulator';
+import { PolicyStudioPage } from './pages/PolicyStudio';
+import { ProjectKnowledgePage } from './pages/ProjectKnowledge';
+import { RepoInsightsPage } from './pages/RepoInsights';
+import { ResearchPage } from './pages/Research';
+import { ResearchRunPage } from './pages/ResearchRun';
+import { EvidenceGraphPage } from './pages/EvidenceGraph';
+import { RollbackPage } from './pages/Rollback';
+import { RunsPage } from './pages/Runs';
+import { TestRunsPage } from './pages/TestRuns';
+import { TimelinePage } from './pages/Timeline';
+import { TraceAnalyticsPage } from './pages/TraceAnalytics';
+import { WorkflowEditorPage } from './pages/WorkflowEditor';
+import { WorkflowRunsPage } from './pages/WorkflowRuns';
+import { WorkflowsPage } from './pages/Workflows';
+import { SkillFoundryPage } from './pages/SkillFoundry';
+import { SkillsPage } from './pages/Skills';
+import { SkillDetailsPage } from './pages/SkillDetails';
+import { BudgetsPage } from './pages/Budgets';
+import { RiskGovernorPage } from './pages/RiskGovernor';
+import { ShadowRunsPage } from './pages/ShadowRuns';
+import { ShadowRunDetailsPage } from './pages/ShadowRunDetails';
 
-type Page = 'Chat' | 'Sessions' | 'Models' | 'Projects' | 'Agents' | 'Delegations' | 'Channels' | 'Browser' | 'Desktop' | 'Tasks' | 'Standing Orders' | 'Tools' | 'Skills' | 'Plugins' | 'Security' | 'Approvals' | 'Jobs' | 'Memory' | 'Logs' | 'Settings';
+type Page = 'Chat' | 'Research' | 'Research Run' | 'Evidence Graph' | 'Shadow Runs' | 'Shadow Run Details' | 'Runs' | 'Timeline' | 'Event Inspector' | 'Rollback' | 'Sessions' | 'Models' | 'Projects' | 'Agents' | 'Delegations' | 'Channels' | 'Browser' | 'Desktop' | 'Tasks' | 'Standing Orders' | 'Tools' | 'Skill Foundry' | 'Skills' | 'Skill Details' | 'Plugins' | 'Capabilities' | 'Budgets' | 'Risk Governor' | 'Connectors' | 'Connector Details' | 'OpenAPI Import' | 'MCP Servers' | 'A2A Agents' | 'Policy Studio' | 'Policy Profiles' | 'Policy Simulator' | 'Security' | 'Approvals' | 'Jobs' | 'Workflows' | 'Workflow Editor' | 'Workflow Runs' | 'Memory' | 'Decisions' | 'Project Knowledge' | 'Code Workspace' | 'Test Runs' | 'Repo Insights' | 'Evals' | 'Trace Analytics' | 'Metrics' | 'Failure Clusters' | 'Logs' | 'Settings';
 type ProjectPolicy = {
   allowed_tools: string[];
   denied_tools: string[];
@@ -127,6 +166,11 @@ type SecurityReport = { score: number; generated_at: string; findings: SecurityF
 
 const pages: Array<{ name: Page; label: string; icon: React.ElementType; section: 'primary' | 'advanced' }> = [
   { name: 'Chat', label: 'Chat', icon: MessageSquare, section: 'primary' },
+  { name: 'Research', label: 'Research', icon: Search, section: 'primary' },
+  { name: 'Shadow Runs', label: 'Shadow', icon: ScanSearch, section: 'primary' },
+  { name: 'Runs', label: 'Runs', icon: History, section: 'primary' },
+  { name: 'Timeline', label: 'Timeline', icon: Activity, section: 'primary' },
+  { name: 'Rollback', label: 'Rollback', icon: Archive, section: 'primary' },
   { name: 'Sessions', label: 'Sessions', icon: Layers, section: 'primary' },
   { name: 'Models', label: 'Models', icon: Zap, section: 'primary' },
   { name: 'Approvals', label: 'Approvals', icon: ShieldAlert, section: 'primary' },
@@ -135,11 +179,36 @@ const pages: Array<{ name: Page; label: string; icon: React.ElementType; section
   { name: 'Agents', label: 'Agents', icon: Bot, section: 'advanced' },
   { name: 'Delegations', label: 'Delegations', icon: Sparkles, section: 'advanced' },
   { name: 'Tools', label: 'Tools', icon: Hammer, section: 'advanced' },
+  { name: 'Skill Foundry', label: 'Skill Foundry', icon: Sparkles, section: 'advanced' },
   { name: 'Skills', label: 'Skills', icon: Sparkles, section: 'advanced' },
   { name: 'Plugins', label: 'Plugins', icon: Plug, section: 'advanced' },
+  { name: 'Capabilities', label: 'Capabilities', icon: Boxes, section: 'advanced' },
+  { name: 'Budgets', label: 'Budgets', icon: Gauge, section: 'advanced' },
+  { name: 'Risk Governor', label: 'Risk Governor', icon: ShieldAlert, section: 'advanced' },
+  { name: 'Connectors', label: 'Connectors', icon: Plug, section: 'advanced' },
+  { name: 'Connector Details', label: 'Connector Detail', icon: Plug, section: 'advanced' },
+  { name: 'OpenAPI Import', label: 'OpenAPI', icon: FileText, section: 'advanced' },
+  { name: 'MCP Servers', label: 'MCP', icon: Plug, section: 'advanced' },
+  { name: 'A2A Agents', label: 'A2A', icon: Bot, section: 'advanced' },
+  { name: 'Policy Studio', label: 'Policy', icon: Shield, section: 'advanced' },
+  { name: 'Policy Profiles', label: 'Profiles', icon: Shield, section: 'advanced' },
+  { name: 'Policy Simulator', label: 'Simulator', icon: ShieldAlert, section: 'advanced' },
   { name: 'Channels', label: 'Channels', icon: Activity, section: 'advanced' },
   { name: 'Jobs', label: 'Jobs', icon: ListChecks, section: 'advanced' },
+  { name: 'Workflows', label: 'Workflows', icon: ListChecks, section: 'advanced' },
+  { name: 'Workflow Editor', label: 'WF Editor', icon: FileText, section: 'advanced' },
+  { name: 'Workflow Runs', label: 'WF Runs', icon: Activity, section: 'advanced' },
+  { name: 'Code Workspace', label: 'Code', icon: Code2, section: 'advanced' },
+  { name: 'Test Runs', label: 'Tests', icon: ListChecks, section: 'advanced' },
+  { name: 'Repo Insights', label: 'Repo', icon: Boxes, section: 'advanced' },
+  { name: 'Evals', label: 'Evals', icon: ListChecks, section: 'advanced' },
+  { name: 'Trace Analytics', label: 'Traces', icon: Activity, section: 'advanced' },
+  { name: 'Event Inspector', label: 'Events', icon: Activity, section: 'advanced' },
+  { name: 'Metrics', label: 'Metrics', icon: Gauge, section: 'advanced' },
+  { name: 'Failure Clusters', label: 'Failures', icon: AlertTriangle, section: 'advanced' },
   { name: 'Memory', label: 'Memory', icon: Database, section: 'advanced' },
+  { name: 'Decisions', label: 'Decisions', icon: ScrollText, section: 'advanced' },
+  { name: 'Project Knowledge', label: 'Knowledge', icon: Boxes, section: 'advanced' },
   { name: 'Logs', label: 'Logs', icon: ScrollText, section: 'advanced' },
   { name: 'Security', label: 'Security', icon: Shield, section: 'advanced' },
   { name: 'Browser', label: 'Browser', icon: Gauge, section: 'advanced' },
@@ -168,6 +237,9 @@ const initialProjectDraft = {
 
 export default function App() {
   const [page, setPage] = useState<Page>('Chat');
+  const [researchRunId, setResearchRunId] = useState('');
+  const [shadowRunId, setShadowRunId] = useState('');
+  const [selectedSkillId, setSelectedSkillId] = useState('');
   const [status, setStatus] = useState<Status | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -866,6 +938,14 @@ export default function App() {
           {error && <ErrorBanner message={error} />}
           <div className="animate-fade-in">
             {page === 'Chat' && <ChatView messages={messages} reasoningEvents={activeReasoningEvents} events={activeSessionEvents} delegations={activeDelegations} approvals={pendingApprovals} input={input} thinking={thinking} lastResponseMs={lastResponseMs} projects={projects} agents={agents} activeProject={activeProject} activeAgent={activeAgent} setSessionProject={setSessionProject} setSessionAgent={setSessionAgent} setInput={setInput} sendMessage={sendMessage} resolveApproval={resolveApproval} />}
+            {page === 'Research' && <ResearchPage onOpen={(id) => { setResearchRunId(id); setPage('Research Run'); }} />}
+            {page === 'Research Run' && <ResearchRunPage researchRunId={researchRunId} onBack={() => setPage('Research')} onGraph={() => setPage('Evidence Graph')} />}
+            {page === 'Evidence Graph' && <EvidenceGraphPage researchRunId={researchRunId} onBack={() => setPage('Research Run')} />}
+            {page === 'Shadow Runs' && <ShadowRunsPage onOpen={(id) => { setShadowRunId(id); setPage('Shadow Run Details'); }} />}
+            {page === 'Shadow Run Details' && <ShadowRunDetailsPage shadowRunId={shadowRunId} onBack={() => setPage('Shadow Runs')} />}
+            {page === 'Runs' && <RunsPage />}
+            {page === 'Timeline' && <TimelinePage />}
+            {page === 'Rollback' && <RollbackPage />}
             {page === 'Sessions' && <SessionsView sessions={sessions} projects={projects} activeSession={activeSession} setActiveSession={setActiveSession} deleteSession={deleteSession} />}
             {page === 'Models' && <ModelsPage providers={modelProviders} models={modelCatalog} preferences={modelPreferences} usage={modelUsage} modelEvents={logs.filter((event) => event.type === 'model.fallback' || event.type === 'model.error')} projects={projects} agents={agents} current={currentModel} loading={loadingPage} onSelectSession={selectSessionModel} onSetDefault={setDefaultModel} onSetPreference={setModelPreference} onRefresh={refreshModelCatalog} onTestProvider={testModelProvider} onToggleProvider={toggleModelProvider} />}
             {page === 'Projects' && <ProjectsView projects={projects} sessions={sessions} draft={projectDraft} setDraft={setProjectDraft} createProject={createProject} loading={loadingPage} />}
@@ -877,12 +957,38 @@ export default function App() {
             {page === 'Tasks' && <TasksView tasks={scheduledTasks} jobs={jobs} draft={taskDraft} setDraft={setTaskDraft} createTask={createScheduledTask} updateTask={updateScheduledTask} runNow={runScheduledTaskNow} loading={loadingPage} />}
             {page === 'Standing Orders' && <StandingOrdersView orders={standingOrders} draft={orderDraft} setDraft={setOrderDraft} createOrder={createStandingOrder} updateOrder={updateStandingOrder} loading={loadingPage} />}
             {page === 'Tools' && <ToolsView tools={tools} loading={loadingPage} />}
-            {page === 'Skills' && <SkillsView skills={skills} draft={skillDraft} setDraft={setSkillDraft} createSkill={createSkill} refresh={() => refreshPageData('Skills')} loading={loadingPage} />}
+            {page === 'Skill Foundry' && <SkillFoundryPage onOpenSkill={(id) => { setSelectedSkillId(id); setPage('Skill Details'); }} />}
+            {page === 'Skills' && <SkillsPage onOpen={(id) => { setSelectedSkillId(id); setPage('Skill Details'); }} />}
+            {page === 'Skill Details' && <SkillDetailsPage skillId={selectedSkillId} onBack={() => setPage('Skills')} />}
             {page === 'Plugins' && <PluginsView plugins={plugins} setPluginEnabled={setPluginEnabled} rescanPlugins={rescanPlugins} loading={loadingPage} />}
+            {page === 'Capabilities' && <CapabilitiesPage />}
+            {page === 'Budgets' && <BudgetsPage />}
+            {page === 'Risk Governor' && <RiskGovernorPage onPolicy={() => setPage('Policy Studio')} />}
+            {page === 'Connectors' && <ConnectorsPage />}
+            {page === 'Connector Details' && <ConnectorDetailsPage />}
+            {page === 'OpenAPI Import' && <OpenAPIImportPage />}
+            {page === 'MCP Servers' && <MCPServersPage />}
+            {page === 'A2A Agents' && <A2AAgentsPage />}
+            {page === 'Policy Studio' && <PolicyStudioPage />}
+            {page === 'Policy Profiles' && <PolicyProfilesPage />}
+            {page === 'Policy Simulator' && <PolicySimulatorPage />}
             {page === 'Security' && <SecurityView report={securityReport} severity={securitySeverity} setSeverity={setSecuritySeverity} runAudit={runSecurityAudit} applyFixes={applySecurityFixes} loading={loadingPage} />}
             {page === 'Approvals' && <ApprovalsView approvals={approvals} resolveApproval={resolveApproval} loading={loadingPage} />}
             {page === 'Jobs' && <JobsView jobs={jobs} jobKind={jobKind} setJobKind={setJobKind} createJob={createJob} loading={loadingPage} />}
-            {page === 'Memory' && <MemoryView memory={memory} draft={memoryDraft} setDraft={setMemoryDraft} createMemory={createMemory} refresh={() => refreshPageData('Memory')} loading={loadingPage} />}
+            {page === 'Workflows' && <WorkflowsPage />}
+            {page === 'Workflow Editor' && <WorkflowEditorPage />}
+            {page === 'Workflow Runs' && <WorkflowRunsPage />}
+            {page === 'Code Workspace' && <CodeWorkspacePage />}
+            {page === 'Test Runs' && <TestRunsPage />}
+            {page === 'Repo Insights' && <RepoInsightsPage />}
+            {page === 'Evals' && <EvalsPage />}
+            {page === 'Trace Analytics' && <TraceAnalyticsPage />}
+            {page === 'Event Inspector' && <EventInspectorPage />}
+            {page === 'Metrics' && <MetricsPage />}
+            {page === 'Failure Clusters' && <FailureClustersPage />}
+            {page === 'Memory' && <MemoryPage />}
+            {page === 'Decisions' && <DecisionsPage />}
+            {page === 'Project Knowledge' && <ProjectKnowledgePage />}
             {page === 'Logs' && <LogsView logs={logs} loading={loadingPage} />}
             {page === 'Settings' && <SettingsView status={status} settingsData={settingsData} performanceTraces={performanceTraces} reloadRegistries={reloadRegistries} patchSettings={patchSettings} loading={loadingPage} />}
           </div>
@@ -1941,6 +2047,35 @@ function SettingsView({ status, settingsData, performanceTraces, reloadRegistrie
   const allowDelete = Boolean(settingsData.allow_delete_in_workspace ?? status?.allow_delete_in_workspace);
   const allowShell = Boolean(settingsData.shell_full_access_in_workspace ?? status?.shell_full_access_in_workspace);
   const requireInsideApproval = Boolean(settingsData.require_approvals ?? true);
+  const runtimeCheckpoints = Boolean(settingsData.runtime_checkpoints_enabled ?? true);
+  const runtimeSnapshots = Boolean(settingsData.runtime_snapshots_enabled ?? true);
+  const runtimeReplay = Boolean(settingsData.runtime_replay_enabled ?? true);
+  const runtimeResumeInterrupted = Boolean(settingsData.runtime_resume_interrupted_runs ?? false);
+  const capabilitiesEnabled = Boolean(settingsData.capabilities_enabled ?? true);
+  const capabilitiesMcp = Boolean(settingsData.capabilities_mcp_enabled ?? false);
+  const capabilitiesA2a = Boolean(settingsData.capabilities_a2a_enabled ?? false);
+  const capabilitiesUntrustedDisabled = Boolean(settingsData.capabilities_untrusted_disabled_by_default ?? true);
+  const capabilitiesUsageLogging = Boolean(settingsData.capabilities_usage_logging ?? true);
+  const evalsEnabled = Boolean(settingsData.evals_enabled ?? true);
+  const evalsAutoScore = Boolean(settingsData.evals_auto_score_runs ?? true);
+  const evalsCollectMetrics = Boolean(settingsData.evals_collect_metrics ?? true);
+  const evalsRedactTraces = Boolean(settingsData.evals_redact_traces ?? true);
+  const evalsFailureClustering = Boolean(settingsData.evals_failure_clustering_enabled ?? true);
+  const eventsEnabled = Boolean(settingsData.events_enabled ?? true);
+  const eventsPersist = Boolean(settingsData.events_persist ?? true);
+  const eventsReplay = Boolean(settingsData.events_replay_enabled ?? true);
+  const eventsRedaction = Boolean(settingsData.events_redaction_enabled ?? true);
+  const researchEnabled = Boolean(settingsData.research_enabled ?? true);
+  const researchRequireEvidence = Boolean(settingsData.research_require_evidence_for_claims ?? true);
+  const researchWebEnabled = Boolean(settingsData.research_web_enabled ?? false);
+  const researchExternalUntrusted = Boolean(settingsData.research_external_sources_untrusted ?? true);
+  const skillsEnabled = Boolean(settingsData.skills_enabled ?? true);
+  const skillFoundryEnabled = Boolean(settingsData.skills_foundry_enabled ?? true);
+  const skillsAutoDetect = Boolean(settingsData.skills_auto_detect_candidates ?? false);
+  const skillsTestBeforeActivation = Boolean(settingsData.skills_test_before_activation ?? true);
+  const budgetsEnabled = Boolean(settingsData.governance_budgets_enabled ?? true);
+  const budgetsEnforce = Boolean(settingsData.governance_budgets_enforce ?? true);
+  const riskGovernorEnabled = Boolean(settingsData.governance_risk_governor_enabled ?? true);
   const sections: Array<[string, Array<[string, React.ReactNode, React.ElementType]>]> = [
     ['Configuration', [['Config path', settingsData.config_path || status?.config_path || '~/.omega/config.json', FileText], ['Config status', settingsData.config_status || status?.config_status || 'unknown', CheckCircle2], ['Legacy .env', String(settingsData.legacy_env_present ?? status?.legacy_env_present ?? false), AlertTriangle], ['Model source', settingsData.model_config_source || status?.model_config_source || 'config.json', Database]]],
     ['Général', [['Workspace', settingsData.workspace || status?.workspace || '...', HardDrive], ['Theme', settingsData.theme || status?.gateway.theme || 'dark', Settings]]],
@@ -1948,6 +2083,13 @@ function SettingsView({ status, settingsData, performanceTraces, reloadRegistrie
     ['Gateway', [['Endpoint', `${settingsData.host || status?.gateway.host}:${settingsData.port || status?.gateway.port}`, Activity], ['Open browser', String(settingsData.open_browser ?? status?.gateway.open_browser), Gauge]]],
     ['Sécurité', [['Safe mode', String(settingsData.safe_mode ?? status?.safe_mode), Shield], ['Require approvals', String(settingsData.require_approvals ?? true), ShieldAlert]]],
     ['Workspace permissions', [['Workspace Full Access', String(workspaceFullAccess), Shield], ['Shell in workspace', String(allowShell), TerminalSquare], ['Delete in workspace', String(allowDelete), Trash2], ['Outside workspace', 'denied', ShieldAlert]]],
+    ['Durable Runtime', [['Checkpoints', String(runtimeCheckpoints), Archive], ['Snapshots', String(runtimeSnapshots), History], ['Replay', String(runtimeReplay), Activity], ['Max actions', String(settingsData.runtime_max_actions_per_turn ?? 10), Gauge], ['Max seconds', String(settingsData.runtime_max_run_seconds ?? 300), Clock3]]],
+    ['Capability Control', [['Enabled', String(capabilitiesEnabled), Boxes], ['Max context', String(settingsData.capabilities_max_in_context ?? 20), Gauge], ['MCP execution', String(capabilitiesMcp), Plug], ['A2A execution', String(capabilitiesA2a), Bot]]],
+    ['Evaluation Loop', [['Enabled', String(evalsEnabled), ListChecks], ['Auto score', String(evalsAutoScore), Gauge], ['Metrics', String(evalsCollectMetrics), Activity], ['Trace limit', String(settingsData.evals_max_trace_chars ?? 20000), ScrollText]]],
+    ['AG-UI Events', [['Enabled', String(eventsEnabled), Activity], ['Persist', String(eventsPersist), Database], ['Replay', String(eventsReplay), History], ['Heartbeat', `${settingsData.events_websocket_heartbeat_seconds ?? 20}s`, Gauge]]],
+    ['Research', [['Enabled', String(researchEnabled), Search], ['Max sources', String(settingsData.research_max_sources ?? 20), Database], ['Max claims', String(settingsData.research_max_claims ?? 50), FileText], ['Web connector', String(researchWebEnabled), Plug]]],
+    ['Skill Foundry', [['Enabled', String(skillFoundryEnabled), Sparkles], ['Auto detect', String(skillsAutoDetect), ScanSearch], ['Minimum runs', String(settingsData.skills_min_successful_runs_for_candidate ?? 2), History], ['Test before activation', String(skillsTestBeforeActivation), ListChecks]]],
+    ['Budget & Risk Governor', [['Budgets', String(budgetsEnabled), Gauge], ['Enforce', String(budgetsEnforce), Shield], ['Warning threshold', String(settingsData.governance_budgets_warning_threshold ?? 0.8), AlertTriangle], ['Max risk', String(settingsData.governance_risk_governor_default_max_risk ?? 'high'), ShieldAlert]]],
     ['Performance', [['Fast mode', String(status?.fast_mode ?? true), Gauge], ['Reasoning', status?.reasoning_detail || 'minimal', Sparkles], ['Streaming', String(status?.streaming ?? true), Activity], ['Perf logging', String(status?.perf_logging ?? true), ScrollText]]],
     ['Expérimental', [['Scheduler', String(settingsData.scheduler_enabled ?? false), Clock3], ['Scheduler tick', `${settingsData.scheduler_tick_seconds ?? 30}s`, Gauge]]],
   ];
@@ -1986,12 +2128,105 @@ function SettingsView({ status, settingsData, performanceTraces, reloadRegistrie
         </div>
       </Card>
       <Card>
+        <SectionHeader icon={Sparkles} title="Omega Skill Foundry" subtitle="Candidates reviewables, drafts versionnées, tests statiques et activation explicite." compact />
+        <div className="mb-4 grid gap-2 sm:grid-cols-2">
+          <ToggleRow label="Skills enabled" value={skillsEnabled} onToggle={() => patchSettings({ skills_enabled: !skillsEnabled })} />
+          <ToggleRow label="Foundry enabled" value={skillFoundryEnabled} onToggle={() => patchSettings({ skills_foundry_enabled: !skillFoundryEnabled })} />
+          <ToggleRow label="Auto detect candidates" value={skillsAutoDetect} onToggle={() => patchSettings({ skills_auto_detect_candidates: !skillsAutoDetect })} />
+          <ToggleRow label="Test before activation" value={skillsTestBeforeActivation} onToggle={() => patchSettings({ skills_test_before_activation: !skillsTestBeforeActivation })} />
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <NumberSetting label="Minimum successful runs" value={Number(settingsData.skills_min_successful_runs_for_candidate ?? 2)} onChange={(value) => patchSettings({ skills_min_successful_runs_for_candidate: Math.max(2, value) })} />
+          <NumberSetting label="Max skills in context" value={Number(settingsData.skills_max_skills_in_context ?? 5)} onChange={(value) => patchSettings({ skills_max_skills_in_context: value })} />
+        </div>
+      </Card>
+      <Card>
+        <SectionHeader icon={Gauge} title="Budget & Risk Governor" subtitle="Limites backend pour coûts, durée, actions, fichiers, retries et risque." compact />
+        <div className="mb-4 grid gap-2 sm:grid-cols-2">
+          <ToggleRow label="Budgets enabled" value={budgetsEnabled} onToggle={() => patchSettings({ governance_budgets_enabled: !budgetsEnabled })} />
+          <ToggleRow label="Enforcement enabled" value={budgetsEnforce} onToggle={() => patchSettings({ governance_budgets_enforce: !budgetsEnforce })} />
+          <ToggleRow label="Risk Governor enabled" value={riskGovernorEnabled} onToggle={() => patchSettings({ governance_risk_governor_enabled: !riskGovernorEnabled })} />
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <NumberSetting label="Warning threshold percent" value={Number(settingsData.governance_budgets_warning_threshold ?? 0.8) * 100} onChange={(value) => patchSettings({ governance_budgets_warning_threshold: Math.max(10, Math.min(100, value)) / 100 })} />
+          <label className="text-xs text-zinc-500">Default max risk
+            <select className="field mt-2" value={String(settingsData.governance_risk_governor_default_max_risk ?? 'high')} onChange={(event) => patchSettings({ governance_risk_governor_default_max_risk: event.target.value })}>
+              {['low', 'medium', 'high', 'critical'].map((risk) => <option key={risk}>{risk}</option>)}
+            </select>
+          </label>
+        </div>
+      </Card>
+      <Card>
         <SectionHeader icon={Shield} title="Runtime controls" subtitle="Ces réglages passent par validation backend." compact />
-        <div className="flex flex-wrap gap-3">
+        <div className="mb-4 grid gap-2 sm:grid-cols-2">
+          <ToggleRow label="Checkpoints enabled" value={runtimeCheckpoints} onToggle={() => patchSettings({ runtime_checkpoints_enabled: !runtimeCheckpoints })} />
+          <ToggleRow label="Snapshots enabled" value={runtimeSnapshots} onToggle={() => patchSettings({ runtime_snapshots_enabled: !runtimeSnapshots })} />
+          <ToggleRow label="Replay enabled" value={runtimeReplay} onToggle={() => patchSettings({ runtime_replay_enabled: !runtimeReplay })} />
+          <ToggleRow label="Resume interrupted runs" value={runtimeResumeInterrupted} onToggle={() => patchSettings({ runtime_resume_interrupted_runs: !runtimeResumeInterrupted })} />
+        </div>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <NumberSetting label="Max tool iterations" value={Number(settingsData.runtime_max_tool_iterations ?? 5)} onChange={(value) => patchSettings({ runtime_max_tool_iterations: value })} />
+          <NumberSetting label="Max actions per turn" value={Number(settingsData.runtime_max_actions_per_turn ?? 10)} onChange={(value) => patchSettings({ runtime_max_actions_per_turn: value })} />
+          <NumberSetting label="Snapshot retention days" value={Number(settingsData.runtime_snapshots_keep_days ?? 30)} onChange={(value) => patchSettings({ runtime_snapshots_keep_days: value })} />
+        </div>
+        <div className="mt-4 flex flex-wrap gap-3">
           <button onClick={() => patchSettings({ open_browser: !(settingsData.open_browser ?? status?.gateway.open_browser) })} className="secondary-button">Toggle open browser</button>
           <button onClick={() => patchSettings({ safe_mode: !(settingsData.safe_mode ?? status?.safe_mode) })} className="secondary-button">Toggle safe mode</button>
           <button onClick={() => patchSettings({ require_approvals: !(settingsData.require_approvals ?? true) })} className="secondary-button">Toggle approvals</button>
           <button onClick={reloadRegistries} className="secondary-button"><RefreshCw size={16} /> Reload registries</button>
+        </div>
+      </Card>
+      <Card>
+        <SectionHeader icon={Search} title="Omega Research" subtitle="Collecte read-only, evidence graph, citations vérifiées et exports workspace." compact />
+        <div className="mb-4 grid gap-2 sm:grid-cols-2">
+          <ToggleRow label="Research enabled" value={researchEnabled} onToggle={() => patchSettings({ research_enabled: !researchEnabled })} />
+          <ToggleRow label="Require evidence for claims" value={researchRequireEvidence} onToggle={() => patchSettings({ research_require_evidence_for_claims: !researchRequireEvidence })} />
+          <ToggleRow label="Web connector enabled" value={researchWebEnabled} onToggle={() => patchSettings({ research_web_enabled: !researchWebEnabled })} />
+          <ToggleRow label="External sources untrusted" value={researchExternalUntrusted} onToggle={() => patchSettings({ research_external_sources_untrusted: !researchExternalUntrusted })} />
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <NumberSetting label="Max sources" value={Number(settingsData.research_max_sources ?? 20)} onChange={(value) => patchSettings({ research_max_sources: value })} />
+          <NumberSetting label="Max claims" value={Number(settingsData.research_max_claims ?? 50)} onChange={(value) => patchSettings({ research_max_claims: value })} />
+        </div>
+        <div className="mt-3 text-xs text-zinc-500">Export directory: {String(settingsData.research_export_dir ?? 'research_reports')}</div>
+      </Card>
+      <Card>
+        <SectionHeader icon={Activity} title="AG-UI Event Protocol" subtitle="Evenements typés, persistés, redacted et rejouables par Omega Control." compact />
+        <div className="mb-4 grid gap-2 sm:grid-cols-2">
+          <ToggleRow label="Events enabled" value={eventsEnabled} onToggle={() => patchSettings({ events_enabled: !eventsEnabled })} />
+          <ToggleRow label="Persist events" value={eventsPersist} onToggle={() => patchSettings({ events_persist: !eventsPersist })} />
+          <ToggleRow label="Replay enabled" value={eventsReplay} onToggle={() => patchSettings({ events_replay_enabled: !eventsReplay })} />
+          <ToggleRow label="Redaction enabled" value={eventsRedaction} onToggle={() => patchSettings({ events_redaction_enabled: !eventsRedaction })} />
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <NumberSetting label="Max replay events" value={Number(settingsData.events_max_replay_events ?? 500)} onChange={(value) => patchSettings({ events_max_replay_events: value })} />
+          <NumberSetting label="Heartbeat seconds" value={Number(settingsData.events_websocket_heartbeat_seconds ?? 20)} onChange={(value) => patchSettings({ events_websocket_heartbeat_seconds: value })} />
+        </div>
+      </Card>
+      <Card>
+        <SectionHeader icon={Boxes} title="Capability Control Plane" subtitle="Découverte contrôlée des capacités injectées dans le contexte agent." compact />
+        <div className="mb-4 grid gap-2 sm:grid-cols-2">
+          <ToggleRow label="Capabilities enabled" value={capabilitiesEnabled} onToggle={() => patchSettings({ capabilities_enabled: !capabilitiesEnabled })} />
+          <ToggleRow label="Usage logging" value={capabilitiesUsageLogging} onToggle={() => patchSettings({ capabilities_usage_logging: !capabilitiesUsageLogging })} />
+          <ToggleRow label="MCP execution enabled" value={capabilitiesMcp} onToggle={() => patchSettings({ capabilities_mcp_enabled: !capabilitiesMcp })} />
+          <ToggleRow label="A2A execution enabled" value={capabilitiesA2a} onToggle={() => patchSettings({ capabilities_a2a_enabled: !capabilitiesA2a })} />
+          <ToggleRow label="Untrusted disabled by default" value={capabilitiesUntrustedDisabled} onToggle={() => patchSettings({ capabilities_untrusted_disabled_by_default: !capabilitiesUntrustedDisabled })} />
+        </div>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <NumberSetting label="Max capabilities in context" value={Number(settingsData.capabilities_max_in_context ?? 20)} onChange={(value) => patchSettings({ capabilities_max_in_context: value })} />
+        </div>
+      </Card>
+      <Card>
+        <SectionHeader icon={ListChecks} title="Evaluation Loop" subtitle="Scoring automatique, métriques de runs et clustering d'échecs redacted." compact />
+        <div className="mb-4 grid gap-2 sm:grid-cols-2">
+          <ToggleRow label="Evals enabled" value={evalsEnabled} onToggle={() => patchSettings({ evals_enabled: !evalsEnabled })} />
+          <ToggleRow label="Auto score runs" value={evalsAutoScore} onToggle={() => patchSettings({ evals_auto_score_runs: !evalsAutoScore })} />
+          <ToggleRow label="Collect metrics" value={evalsCollectMetrics} onToggle={() => patchSettings({ evals_collect_metrics: !evalsCollectMetrics })} />
+          <ToggleRow label="Redact traces" value={evalsRedactTraces} onToggle={() => patchSettings({ evals_redact_traces: !evalsRedactTraces })} />
+          <ToggleRow label="Failure clustering" value={evalsFailureClustering} onToggle={() => patchSettings({ evals_failure_clustering_enabled: !evalsFailureClustering })} />
+        </div>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <NumberSetting label="Max trace chars" value={Number(settingsData.evals_max_trace_chars ?? 20000)} onChange={(value) => patchSettings({ evals_max_trace_chars: value })} />
         </div>
       </Card>
       <Card>
@@ -2028,6 +2263,21 @@ function ToggleRow({ label, value, onToggle }: { label: string; value: boolean; 
         <span className={`block h-5 w-5 rounded-full bg-stone-100 transition ${value ? 'translate-x-5' : 'translate-x-0'}`} />
       </span>
     </button>
+  );
+}
+
+function NumberSetting({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) {
+  return (
+    <label className="rounded-2xl border border-white/10 bg-black/10 p-3">
+      <span className="text-xs text-zinc-500">{label}</span>
+      <input
+        className="field mt-2"
+        type="number"
+        min={1}
+        value={value}
+        onChange={(event) => onChange(Math.max(1, Number(event.target.value || 1)))}
+      />
+    </label>
   );
 }
 

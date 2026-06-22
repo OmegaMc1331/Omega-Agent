@@ -83,12 +83,16 @@ def list_audit_logs(config: OmegaConfig, limit: int = 100) -> list[dict]:
 def run_security_audit(config: OmegaConfig) -> AuditReport:
     findings: list[AuditFinding] = []
     _audit_gateway(config, findings)
+    _audit_mobile(config, findings)
     _audit_workspace_full_access(config, findings)
     _audit_tools(config, findings)
+    _audit_policy_studio(config, findings)
+    _audit_governance(config, findings)
     _audit_plugins(config, findings)
     _audit_skills(config, findings)
     _audit_channels(config, findings)
     _audit_scheduler(config, findings)
+    _audit_connectors(config, findings)
     _audit_browser_desktop(config, findings)
     _audit_secrets(config, findings)
     return AuditReport(score=_score(findings), generated_at=datetime.now(timezone.utc).isoformat(), findings=findings)
@@ -130,6 +134,16 @@ def _audit_gateway(config: OmegaConfig, findings: list[AuditFinding]) -> None:
     findings.append(AuditFinding("info", "gateway", "Auth locale non disponible comme controle runtime dedie.", "Garder le bind local et eviter toute exposition LAN."))
 
 
+def _audit_mobile(config: OmegaConfig, findings: list[AuditFinding]) -> None:
+    if config.mobile_mode == "tailscale":
+        if config.host in {"127.0.0.1", "localhost", "::1"}:
+            findings.append(AuditFinding("info", "mobile", "Mode mobile Tailscale configure avec Gateway local.", "Utiliser tailscale serve et garder Funnel desactive. Auth mobile recommandee."))
+        else:
+            findings.append(AuditFinding("medium", "mobile", "Mode mobile Tailscale configure mais Gateway non local.", "Revenir a 127.0.0.1 et publier via tailscale serve."))
+    else:
+        findings.append(AuditFinding("info", "mobile", "Mode mobile desactive.", "Tailscale est recommande pour l'acces mobile."))
+
+
 def _audit_workspace_full_access(config: OmegaConfig, findings: list[AuditFinding]) -> None:
     home = Path.home().resolve()
     workspace = config.workspace.resolve()
@@ -163,6 +177,50 @@ def _audit_tools(config: OmegaConfig, findings: list[AuditFinding]) -> None:
             findings.append(AuditFinding("critical", "tools", "Commande dangereuse detectee dans shell_allowlist.", "Retirer commandes destructrices de shell_allowlist."))
     except Exception as exc:
         findings.append(AuditFinding("low", "tools", f"Audit projet impossible: {exc}", "Verifier la base runtime."))
+
+
+def _audit_policy_studio(config: OmegaConfig, findings: list[AuditFinding]) -> None:
+    try:
+        from omega_agent.security.policy_profiles import PolicyProfilesStore, PolicyRulesStore
+
+        profiles = {profile.id: profile for profile in PolicyProfilesStore(config).list(include_disabled=False)}
+        rules = PolicyRulesStore(config).list(include_disabled=False)
+    except Exception as exc:
+        findings.append(AuditFinding("low", "policy", f"Audit Policy Studio impossible: {exc}", "Verifier les migrations policy."))
+        return
+    for rule in rules:
+        if rule.profile_id not in profiles:
+            continue
+        conditions = rule.conditions or {}
+        if rule.effect == "allow" and conditions.get("path_in_workspace") is False:
+            findings.append(AuditFinding("high", "policy", f"Rule allow hors workspace: {rule.name}.", "Remplacer par deny ou require_approval."))
+        if rule.effect == "allow" and conditions.get("action_category") == "system_sensitive":
+            findings.append(AuditFinding("critical", "policy", f"Rule allow system_sensitive: {rule.name}.", "Supprimer cette rule; system_sensitive doit rester deny."))
+        if rule.effect == "allow" and conditions.get("channel") == "mobile" and conditions.get("action_category") == "destructive_write":
+            findings.append(AuditFinding("high", "policy", f"Rule mobile destructive sans approval: {rule.name}.", "Demander approval pour les actions destructrices mobile."))
+        if rule.effect == "allow" and conditions.get("source_trust") == "untrusted" and (rule.tool_name == "run_shell" or conditions.get("tool_name") == "run_shell"):
+            findings.append(AuditFinding("high", "policy", f"Rule untrusted shell allowed: {rule.name}.", "Refuser shell pour les sources untrusted."))
+
+
+def _audit_governance(config: OmegaConfig, findings: list[AuditFinding]) -> None:
+    if not config.governance_budgets_enabled or not config.governance_budgets_enforce:
+        severity = "high" if config.mobile_mode == "tailscale" else "medium"
+        findings.append(AuditFinding(severity, "governance", "Budget enforcement disabled.", "Activer governance.budgets.enabled et governance.budgets.enforce."))
+        return
+    try:
+        from omega_agent.governance.budget_enforcer import BudgetEnforcer
+
+        effective = BudgetEnforcer(config).get_effective_budget()
+        external_limit = effective.limits.get("max_external_calls")
+        max_risk = str(effective.limits.get("max_risk_level") or config.governance_risk_governor_default_max_risk)
+        if external_limit is None:
+            findings.append(AuditFinding("medium", "governance", "External calls are unlimited.", "Set max_external_calls on the default budget profile."))
+        if max_risk == "critical":
+            findings.append(AuditFinding("high", "governance", "Global maximum risk is critical.", "Use high or lower and require explicit approval for critical actions."))
+        else:
+            findings.append(AuditFinding("info", "governance", f"Budget enforcement active with max risk {max_risk}.", "Keep budget profiles scoped and reviewed."))
+    except Exception as exc:
+        findings.append(AuditFinding("medium", "governance", f"Budget audit unavailable: {exc}", "Verify governance migrations and default profile."))
 
 
 def _audit_plugins(config: OmegaConfig, findings: list[AuditFinding]) -> None:
@@ -234,6 +292,38 @@ def _audit_scheduler(config: OmegaConfig, findings: list[AuditFinding]) -> None:
                 findings.append(AuditFinding(severity, "scheduler", f"Tache planifiee sensible: {task.title}.", "Exiger approval et limiter shell/network."))
     except Exception:
         return
+
+
+def _audit_connectors(config: OmegaConfig, findings: list[AuditFinding]) -> None:
+    if not getattr(config, "connectors_enabled", True):
+        findings.append(AuditFinding("info", "connectors", "Connectors desactives.", "Activer seulement si besoin API-first."))
+        return
+    try:
+        from omega_agent.connectors.connector_auth import compute_auth_status
+        from omega_agent.connectors.registry import ConnectorsRegistry
+
+        connectors = ConnectorsRegistry(config).list()
+    except Exception as exc:
+        findings.append(AuditFinding("low", "connectors", f"Audit connecteurs impossible: {exc}", "Verifier les migrations connectors."))
+        return
+    if getattr(config, "connectors_browser_fallback_enabled", False):
+        severity = "high" if config.browser_enabled else "medium"
+        findings.append(AuditFinding(severity, "connectors", "Browser fallback connecteurs active.", "Garder API-first et browser-last; activer seulement explicitement."))
+    for connector in connectors:
+        if connector.trust_level == "untrusted" and connector.enabled:
+            findings.append(AuditFinding("high", "connectors", f"Connecteur untrusted active: {connector.id}.", "Desactiver ou review manuelle avant usage."))
+        if connector.auth_ref and compute_auth_status(connector) == "missing":
+            findings.append(AuditFinding("medium", "connectors", f"Auth ref manquante pour {connector.id}: {connector.auth_ref}.", "Configurer la variable d'environnement utilisateur sans la stocker en SQLite."))
+        for operation in connector.operations:
+            if operation.enabled and operation.action_category == "system_sensitive":
+                findings.append(AuditFinding("critical", "connectors", f"Operation system_sensitive exposee: {connector.id}/{operation.id}.", "Desactiver l'operation ou refuser par policy."))
+            if (
+                connector.enabled
+                and operation.enabled
+                and operation.action_category in {"reversible_write", "destructive_write", "external_side_effect"}
+                and not operation.requires_approval_default
+            ):
+                findings.append(AuditFinding("high", "connectors", f"Operation externe/write sans approval default: {connector.id}/{operation.id}.", "Activer requires_approval_default ou une rule policy require_approval."))
 
 
 def _audit_browser_desktop(config: OmegaConfig, findings: list[AuditFinding]) -> None:

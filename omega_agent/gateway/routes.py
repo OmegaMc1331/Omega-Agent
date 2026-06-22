@@ -4,6 +4,7 @@ import json
 import os
 from dataclasses import asdict, replace
 from datetime import datetime, timezone
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import FileResponse
@@ -18,7 +19,6 @@ from omega_agent.gateway.models import (
     ConfigPatchRequest,
     DelegationCreateRequest,
     JobCreateRequest,
-    MemoryCreateRequest,
     PluginUpdateRequest,
     PluginEnableRequest,
     ProjectCreateRequest,
@@ -39,9 +39,22 @@ from omega_agent.gateway.models import (
 )
 from omega_agent.config import OmegaConfig
 from omega_agent.config_store import config_path, expected_secret_status, migrate_env_to_config, parse_cli_value, redact_config_for_display, save_config, set_config_value
+from omega_agent.gateway.capability_routes import register_capability_routes
+from omega_agent.gateway.budget_routes import register_budget_routes
+from omega_agent.gateway.code_routes import register_code_routes
+from omega_agent.gateway.connector_routes import register_connector_routes
+from omega_agent.gateway.eval_routes import register_eval_routes
+from omega_agent.gateway.event_routes import register_event_routes
+from omega_agent.gateway.memory_routes import register_memory_routes
+from omega_agent.gateway.policy_routes import register_policy_routes
+from omega_agent.gateway.research_routes import register_research_routes
+from omega_agent.gateway.skill_routes import register_skill_routes
+from omega_agent.gateway.shadow_routes import register_shadow_routes
+from omega_agent.gateway.workflow_routes import register_workflow_routes
 from omega_agent.security.audit import apply_safe_fixes, list_audit_logs, run_security_audit
 from omega_agent.security.desktop_policy import desktop_screenshots_dir
 from omega_agent.security.redaction import redact
+from omega_agent.runtime.durable_runtime import DurableRuntime
 from omega_agent.runtime.settings import SettingsStore
 from omega_agent.tools.browser import browser_status, close_browser
 from omega_agent.tools.desktop import desktop_status
@@ -52,6 +65,18 @@ VALID_APPROVAL_STATUSES = {"pending", "approved", "rejected", "expired"}
 
 def create_router() -> APIRouter:
     router = APIRouter()
+    register_capability_routes(router)
+    register_budget_routes(router)
+    register_code_routes(router)
+    register_connector_routes(router)
+    register_eval_routes(router)
+    register_event_routes(router)
+    register_memory_routes(router)
+    register_policy_routes(router)
+    register_research_routes(router)
+    register_skill_routes(router)
+    register_shadow_routes(router)
+    register_workflow_routes(router)
 
     @router.get("/health")
     async def health(request: Request):
@@ -135,12 +160,23 @@ def create_router() -> APIRouter:
         allowed_prefixes = (
             "app.",
             "gateway.",
+            "mobile.",
             "workspace.",
             "model.",
             "providers.",
             "channels.",
             "scheduler.",
             "reasoning.",
+            "runtime.",
+            "capabilities.",
+            "memory.",
+            "code.",
+            "self_healing.",
+            "evals.",
+            "connectors.",
+            "events.",
+            "research.",
+            "shadow.",
             "performance.",
             "paths.",
         )
@@ -400,12 +436,103 @@ def create_router() -> APIRouter:
         if state.sessions.get_session(session_id) is None:
             raise HTTPException(status_code=404, detail="Session introuvable.")
         try:
-            output = await state.runtime().send_message(message, session_id=session_id)
+            runtime = state.runtime()
+            output = await runtime.send_message(message, session_id=session_id)
         except PermissionError as exc:
             raise HTTPException(status_code=403, detail=str(exc)) from exc
         if output == CODEX_LOGIN_HINT:
             output = CODEX_DISCONNECTED_MESSAGE
-        return {"session_id": session_id, "message": output}
+        return {"session_id": session_id, "message": output, "run_id": getattr(runtime, "last_run_id", None)}
+
+    @router.get("/api/runs")
+    async def api_runs(request: Request, session_id: str | None = None, status: str | None = None, limit: int = Query(50, ge=1, le=500)):
+        runtime = DurableRuntime(request.app.state.gateway_state.config)
+        return [run.as_api() for run in runtime.list_runs(session_id=session_id, status=status, limit=limit)]
+
+    @router.post("/api/runs")
+    async def api_create_run(request: Request):
+        state = request.app.state.gateway_state
+        payload = await request.json()
+        session_id = str(payload.get("session_id") or state.sessions.default_session_id())
+        if state.sessions.get_session(session_id) is None:
+            raise HTTPException(status_code=404, detail="Session introuvable.")
+        run = DurableRuntime(state.config).create_run(session_id, str(payload.get("message") or payload.get("title") or "Run manuel"), metadata=payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {})
+        return run.as_api()
+
+    @router.get("/api/runs/{run_id}")
+    async def api_get_run(run_id: str, request: Request):
+        runtime = DurableRuntime(request.app.state.gateway_state.config)
+        run = runtime.get_run(run_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail="Run introuvable.")
+        return run.as_api()
+
+    @router.get("/api/runs/{run_id}/steps")
+    async def api_run_steps(run_id: str, request: Request):
+        runtime = DurableRuntime(request.app.state.gateway_state.config)
+        if runtime.get_run(run_id) is None:
+            raise HTTPException(status_code=404, detail="Run introuvable.")
+        return [step.as_api() for step in runtime.list_steps(run_id)]
+
+    @router.get("/api/runs/{run_id}/actions")
+    async def api_run_actions(run_id: str, request: Request):
+        runtime = DurableRuntime(request.app.state.gateway_state.config)
+        if runtime.get_run(run_id) is None:
+            raise HTTPException(status_code=404, detail="Run introuvable.")
+        return [action.as_api() for action in runtime.list_actions(run_id)]
+
+    @router.get("/api/runs/{run_id}/checkpoints")
+    async def api_run_checkpoints(run_id: str, request: Request):
+        runtime = DurableRuntime(request.app.state.gateway_state.config)
+        if runtime.get_run(run_id) is None:
+            raise HTTPException(status_code=404, detail="Run introuvable.")
+        return runtime.list_checkpoints(run_id)
+
+    @router.post("/api/runs/{run_id}/pause")
+    async def api_pause_run(run_id: str, request: Request):
+        return DurableRuntime(request.app.state.gateway_state.config).pause_run(run_id).as_api()
+
+    @router.post("/api/runs/{run_id}/resume")
+    async def api_resume_run(run_id: str, request: Request):
+        return DurableRuntime(request.app.state.gateway_state.config).resume_run(run_id).as_api()
+
+    @router.post("/api/runs/{run_id}/cancel")
+    async def api_cancel_run(run_id: str, request: Request):
+        return DurableRuntime(request.app.state.gateway_state.config).cancel_run(run_id).as_api()
+
+    @router.post("/api/runs/{run_id}/replay")
+    async def api_replay_run(run_id: str, request: Request):
+        payload = await request.json() if request.headers.get("content-length") else {}
+        return DurableRuntime(request.app.state.gateway_state.config).replay_run(run_id, dry_run=bool(payload.get("dry_run", True)))
+
+    @router.get("/api/snapshots")
+    async def api_snapshots(request: Request, limit: int = Query(100, ge=1, le=500)):
+        return [snapshot.as_api() for snapshot in DurableRuntime(request.app.state.gateway_state.config).list_snapshots(limit=limit)]
+
+    @router.get("/api/runs/{run_id}/snapshots")
+    async def api_run_snapshots(run_id: str, request: Request):
+        runtime = DurableRuntime(request.app.state.gateway_state.config)
+        if runtime.get_run(run_id) is None:
+            raise HTTPException(status_code=404, detail="Run introuvable.")
+        return [snapshot.as_api() for snapshot in runtime.list_snapshots(run_id=run_id)]
+
+    @router.post("/api/snapshots/{snapshot_id}/rollback")
+    async def api_rollback_snapshot(snapshot_id: str, request: Request):
+        return DurableRuntime(request.app.state.gateway_state.config).rollback_snapshot(snapshot_id)
+
+    @router.post("/api/runs/{run_id}/rollback")
+    async def api_rollback_run(run_id: str, request: Request):
+        return DurableRuntime(request.app.state.gateway_state.config).rollback_run(run_id)
+
+    @router.get("/api/timeline")
+    async def api_timeline(request: Request, limit: int = Query(100, ge=1, le=500)):
+        return [asdict(event) for event in request.app.state.gateway_state.events.list_recent(limit=limit)]
+
+    @router.get("/api/sessions/{session_id}/timeline")
+    async def api_session_timeline(session_id: str, request: Request, limit: int = Query(100, ge=1, le=500)):
+        if request.app.state.gateway_state.sessions.get_session(session_id) is None:
+            raise HTTPException(status_code=404, detail="Session introuvable.")
+        return [asdict(event) for event in request.app.state.gateway_state.events.list_recent(limit=limit, session_id=session_id)]
 
     @router.get("/api/tools")
     async def api_tools(request: Request):
@@ -466,6 +593,25 @@ def create_router() -> APIRouter:
 
     @router.post("/api/skills")
     async def api_create_skill(payload: SkillCreateRequest, request: Request):
+        if payload.definition is not None:
+            from omega_agent.skills.skill_store import SkillStore
+            from omega_agent.skills.skill_validator import SkillValidator
+
+            validation = SkillValidator(request.app.state.gateway_state.config).validate(payload.definition, payload.test_cases)
+            if not validation.valid:
+                raise HTTPException(status_code=400, detail="; ".join(validation.errors))
+            skill = SkillStore(request.app.state.gateway_state.config).create_skill(
+                name=payload.name,
+                description=payload.description,
+                skill_type=payload.skill_type or "prompt",
+                definition=payload.definition,
+                test_cases=payload.test_cases,
+                status="draft",
+                metadata={**payload.metadata, "trust_level": "untrusted", "imported": True},
+            )
+            request.app.state.gateway_state.reload_registries(log_event=False)
+            request.app.state.gateway_state.events.add("skill.created", {"skill_id": skill.id, "status": "draft", "imported": True})
+            return skill.as_api()
         allowed_tool_ids = {tool.id for tool in request.app.state.gateway_state.tools()}
         unknown_tools = sorted(set(payload.tools) - allowed_tool_ids)
         if unknown_tools:
@@ -488,6 +634,31 @@ def create_router() -> APIRouter:
 
     @router.patch("/api/skills/{skill_id}")
     async def api_update_skill(skill_id: str, payload: SkillUpdateRequest, request: Request):
+        from omega_agent.skills.skill_promoter import SkillPromoter
+        from omega_agent.skills.skill_store import SkillStore
+        from omega_agent.skills.skill_validator import SkillValidator
+
+        state = request.app.state.gateway_state
+        store = SkillStore(state.config)
+        foundry = store.get_skill(skill_id)
+        if foundry is not None:
+            patch = payload.model_dump(exclude_none=True, exclude={"enabled", "changelog"})
+            if patch:
+                definition = patch.get("definition", foundry.definition)
+                tests = patch.get("test_cases", foundry.test_cases)
+                validation = SkillValidator(state.config).validate(definition, tests)
+                if not validation.valid:
+                    raise HTTPException(status_code=400, detail="; ".join(validation.errors))
+                foundry = store.update_skill(skill_id, patch, changelog=payload.changelog)
+            if payload.enabled is not None:
+                try:
+                    foundry = SkillPromoter(state.config).activate(skill_id) if payload.enabled else SkillPromoter(state.config).disable(skill_id)
+                except ValueError as exc:
+                    raise HTTPException(status_code=400, detail=str(exc)) from exc
+            state.reload_registries(log_event=False)
+            return foundry.as_api()
+        if payload.enabled is None:
+            raise HTTPException(status_code=400, detail="Le champ enabled est requis pour une skill legacy.")
         try:
             skill = request.app.state.gateway_state.skills.set_enabled(skill_id, payload.enabled)
         except ValueError as exc:
@@ -858,25 +1029,6 @@ def create_router() -> APIRouter:
             raise HTTPException(status_code=404, detail="Job introuvable.")
         return asdict(job)
 
-    @router.get("/api/memory")
-    async def api_memory(request: Request, q: str = "", scope: str | None = None):
-        if scope is not None and scope not in {"global", "session", "project"}:
-            raise HTTPException(status_code=400, detail="Scope memoire invalide.")
-        return [asdict(memory) for memory in request.app.state.gateway_state.memory.search(query=q, scope=scope)]
-
-    @router.post("/api/memory")
-    async def api_create_memory(payload: MemoryCreateRequest, request: Request):
-        if not payload.content.strip():
-            raise HTTPException(status_code=400, detail="Memoire vide.")
-        return asdict(request.app.state.gateway_state.memory.create(payload.content, key=payload.key, scope=payload.scope, tags=payload.tags))
-
-    @router.delete("/api/memory/{memory_id}")
-    async def api_delete_memory(memory_id: str, request: Request):
-        deleted = request.app.state.gateway_state.memory.delete(memory_id)
-        if not deleted:
-            raise HTTPException(status_code=404, detail="Memoire introuvable.")
-        return {"ok": True}
-
     @router.get("/api/events")
     async def api_events(request: Request, limit: int = Query(100, ge=1, le=500), type: str | None = None, session_id: str | None = None):
         if session_id is not None and request.app.state.gateway_state.sessions.get_session(session_id) is None:
@@ -948,8 +1100,122 @@ def _patched_runtime_config(config, values: dict):
         "shell_full_access_in_workspace": "shell_full_access_in_workspace",
         "allow_delete_in_workspace": "allow_delete_in_workspace",
         "allow_git_write_in_workspace": "allow_git_write_in_workspace",
-    }
-    updates = {attr: bool(values[key]) for key, attr in mapping.items() if key in values}
+        "runtime_checkpoints_enabled": "runtime_checkpoints_enabled",
+        "runtime_snapshots_enabled": "runtime_snapshots_enabled",
+        "runtime_snapshots_max_file_size_mb": "runtime_snapshots_max_file_size_mb",
+        "runtime_snapshots_keep_days": "runtime_snapshots_keep_days",
+        "runtime_replay_enabled": "runtime_replay_enabled",
+        "runtime_resume_interrupted_runs": "runtime_resume_interrupted_runs",
+        "runtime_max_tool_iterations": "runtime_max_tool_iterations",
+        "runtime_max_actions_per_turn": "runtime_max_actions_per_turn",
+        "runtime_max_run_seconds": "runtime_max_run_seconds",
+        "runtime_dead_letter_enabled": "runtime_dead_letter_enabled",
+        "capabilities_enabled": "capabilities_enabled",
+        "capabilities_max_in_context": "capabilities_max_in_context",
+        "capabilities_mcp_enabled": "capabilities_mcp_enabled",
+        "capabilities_a2a_enabled": "capabilities_a2a_enabled",
+        "capabilities_untrusted_disabled_by_default": "capabilities_untrusted_disabled_by_default",
+        "capabilities_usage_logging": "capabilities_usage_logging",
+        "memory_enabled": "memory_enabled",
+        "memory_project_memory_enabled": "memory_project_memory_enabled",
+        "memory_auto_capture_decisions": "memory_auto_capture_decisions",
+        "memory_auto_capture_tool_lessons": "memory_auto_capture_tool_lessons",
+        "memory_max_context_memories": "memory_max_context_memories",
+        "memory_default_ttl_days": "memory_default_ttl_days",
+        "memory_redaction_enabled": "memory_redaction_enabled",
+        "memory_require_provenance": "memory_require_provenance",
+        "memory_compaction_enabled": "memory_compaction_enabled",
+        "code_enabled": "code_enabled",
+        "code_auto_scan": "code_auto_scan",
+        "code_test_timeout_seconds": "code_test_timeout_seconds",
+        "code_max_output_chars": "code_max_output_chars",
+        "code_allow_npm_install": "code_allow_npm_install",
+        "code_allow_pip_install": "code_allow_pip_install",
+        "code_allow_git_commit": "code_allow_git_commit",
+        "code_allow_git_push": "code_allow_git_push",
+            "self_healing_enabled": "self_healing_enabled",
+            "self_healing_max_attempts": "self_healing_max_attempts",
+            "self_healing_auto_apply_safe_recoveries": "self_healing_auto_apply_safe_recoveries",
+            "evals_enabled": "evals_enabled",
+            "evals_auto_score_runs": "evals_auto_score_runs",
+            "evals_collect_metrics": "evals_collect_metrics",
+            "evals_redact_traces": "evals_redact_traces",
+            "evals_max_trace_chars": "evals_max_trace_chars",
+            "evals_failure_clustering_enabled": "evals_failure_clustering_enabled",
+            "evals_default_dataset_dir": "evals_default_dataset_dir",
+            "evals_report_dir": "evals_report_dir",
+            "events_enabled": "events_enabled",
+            "events_persist": "events_persist",
+            "events_replay_enabled": "events_replay_enabled",
+            "events_max_replay_events": "events_max_replay_events",
+            "events_redaction_enabled": "events_redaction_enabled",
+            "events_websocket_heartbeat_seconds": "events_websocket_heartbeat_seconds",
+            "research_enabled": "research_enabled",
+            "research_max_sources": "research_max_sources",
+            "research_max_claims": "research_max_claims",
+            "research_require_evidence_for_claims": "research_require_evidence_for_claims",
+            "research_export_dir": "research_export_dir",
+            "research_web_enabled": "research_web_enabled",
+            "research_external_sources_untrusted": "research_external_sources_untrusted",
+            "skills_enabled": "skills_enabled",
+            "skills_foundry_enabled": "skills_foundry_enabled",
+            "skills_auto_detect_candidates": "skills_auto_detect_candidates",
+            "skills_min_successful_runs_for_candidate": "skills_min_successful_runs_for_candidate",
+            "skills_require_user_approval_for_promotion": "skills_require_user_approval_for_promotion",
+            "skills_max_skills_in_context": "skills_max_skills_in_context",
+            "skills_test_before_activation": "skills_test_before_activation",
+            "governance_budgets_enabled": "governance_budgets_enabled",
+            "governance_budgets_default_profile": "governance_budgets_default_profile",
+            "governance_budgets_enforce": "governance_budgets_enforce",
+            "governance_budgets_warning_threshold": "governance_budgets_warning_threshold",
+            "governance_risk_governor_enabled": "governance_risk_governor_enabled",
+            "governance_risk_governor_default_max_risk": "governance_risk_governor_default_max_risk",
+            "shadow_enabled": "shadow_enabled",
+            "shadow_require_for_high_risk": "shadow_require_for_high_risk",
+            "shadow_require_for_workflows_over_steps": "shadow_require_for_workflows_over_steps",
+            "shadow_workspace_keep_days": "shadow_workspace_keep_days",
+            "shadow_max_shadow_seconds": "shadow_max_shadow_seconds",
+            "shadow_allow_shell_in_shadow": "shadow_allow_shell_in_shadow",
+            "shadow_auto_promote_low_risk": "shadow_auto_promote_low_risk",
+            "shadow_compare_after_live": "shadow_compare_after_live",
+        }
+    updates = {}
+    for key, attr in mapping.items():
+        if key not in values:
+            continue
+        value = values[key]
+        if attr.startswith("runtime_max") or attr in {
+            "runtime_snapshots_max_file_size_mb",
+            "runtime_snapshots_keep_days",
+            "capabilities_max_in_context",
+            "memory_max_context_memories",
+            "code_test_timeout_seconds",
+            "code_max_output_chars",
+            "self_healing_max_attempts",
+            "evals_max_trace_chars",
+            "events_max_replay_events",
+            "events_websocket_heartbeat_seconds",
+            "research_max_sources",
+            "research_max_claims",
+            "skills_min_successful_runs_for_candidate",
+            "skills_max_skills_in_context",
+            "shadow_require_for_workflows_over_steps",
+            "shadow_workspace_keep_days",
+            "shadow_max_shadow_seconds",
+        }:
+            updates[attr] = int(value)
+        elif attr == "memory_default_ttl_days":
+            updates[attr] = None if value in {None, "", "none", "null"} else int(value)
+        elif attr in {"evals_default_dataset_dir", "evals_report_dir"}:
+            updates[attr] = Path(str(value)).expanduser().resolve()
+        elif attr == "research_export_dir":
+            updates[attr] = str(value)
+        elif attr in {"governance_budgets_default_profile", "governance_risk_governor_default_max_risk"}:
+            updates[attr] = str(value)
+        elif attr == "governance_budgets_warning_threshold":
+            updates[attr] = max(0.1, min(1.0, float(value)))
+        else:
+            updates[attr] = bool(value)
     return replace(config, **updates) if updates else config
 
 
@@ -966,6 +1232,78 @@ def _persist_settings_to_config(values: dict) -> None:
         "default_model_ref": "model.default",
         "fallback_model_ref": "model.fallback",
         "model_selection_enabled": "model.selection_enabled",
+        "runtime_checkpoints_enabled": "runtime.checkpoints.enabled",
+        "runtime_snapshots_enabled": "runtime.snapshots.enabled",
+        "runtime_snapshots_max_file_size_mb": "runtime.snapshots.max_file_size_mb",
+        "runtime_snapshots_keep_days": "runtime.snapshots.keep_days",
+        "runtime_replay_enabled": "runtime.replay.enabled",
+        "runtime_resume_interrupted_runs": "runtime.resume_interrupted_runs",
+        "runtime_max_tool_iterations": "runtime.max_tool_iterations",
+        "runtime_max_actions_per_turn": "runtime.max_actions_per_turn",
+        "runtime_max_run_seconds": "runtime.max_run_seconds",
+        "runtime_dead_letter_enabled": "runtime.dead_letter_enabled",
+        "capabilities_enabled": "capabilities.enabled",
+        "capabilities_max_in_context": "capabilities.max_in_context",
+        "capabilities_mcp_enabled": "capabilities.mcp_enabled",
+        "capabilities_a2a_enabled": "capabilities.a2a_enabled",
+        "capabilities_untrusted_disabled_by_default": "capabilities.untrusted_disabled_by_default",
+        "capabilities_usage_logging": "capabilities.usage_logging",
+        "memory_enabled": "memory.enabled",
+        "memory_project_memory_enabled": "memory.project_memory_enabled",
+        "memory_auto_capture_decisions": "memory.auto_capture_decisions",
+        "memory_auto_capture_tool_lessons": "memory.auto_capture_tool_lessons",
+        "memory_max_context_memories": "memory.max_context_memories",
+        "memory_default_ttl_days": "memory.default_ttl_days",
+        "memory_redaction_enabled": "memory.redaction_enabled",
+        "memory_require_provenance": "memory.require_provenance",
+        "memory_compaction_enabled": "memory.compaction_enabled",
+        "code_enabled": "code.enabled",
+        "code_auto_scan": "code.auto_scan",
+        "code_test_timeout_seconds": "code.test_timeout_seconds",
+        "code_max_output_chars": "code.max_output_chars",
+        "code_allow_npm_install": "code.allow_npm_install",
+        "code_allow_pip_install": "code.allow_pip_install",
+        "code_allow_git_commit": "code.allow_git_commit",
+        "code_allow_git_push": "code.allow_git_push",
+        "self_healing_enabled": "self_healing.enabled",
+        "self_healing_max_attempts": "self_healing.max_attempts",
+        "self_healing_auto_apply_safe_recoveries": "self_healing.auto_apply_safe_recoveries",
+        "evals_enabled": "evals.enabled",
+        "evals_auto_score_runs": "evals.auto_score_runs",
+        "evals_collect_metrics": "evals.collect_metrics",
+        "evals_redact_traces": "evals.redact_traces",
+        "evals_max_trace_chars": "evals.max_trace_chars",
+        "evals_failure_clustering_enabled": "evals.failure_clustering_enabled",
+        "evals_default_dataset_dir": "evals.default_dataset_dir",
+        "evals_report_dir": "evals.report_dir",
+        "research_enabled": "research.enabled",
+        "research_max_sources": "research.max_sources",
+        "research_max_claims": "research.max_claims",
+        "research_require_evidence_for_claims": "research.require_evidence_for_claims",
+        "research_export_dir": "research.export_dir",
+        "research_web_enabled": "research.web_enabled",
+        "research_external_sources_untrusted": "research.external_sources_untrusted",
+        "skills_enabled": "skills.enabled",
+        "skills_foundry_enabled": "skills.foundry_enabled",
+        "skills_auto_detect_candidates": "skills.auto_detect_candidates",
+        "skills_min_successful_runs_for_candidate": "skills.min_successful_runs_for_candidate",
+        "skills_require_user_approval_for_promotion": "skills.require_user_approval_for_promotion",
+        "skills_max_skills_in_context": "skills.max_skills_in_context",
+        "skills_test_before_activation": "skills.test_before_activation",
+        "governance_budgets_enabled": "governance.budgets.enabled",
+        "governance_budgets_default_profile": "governance.budgets.default_profile",
+        "governance_budgets_enforce": "governance.budgets.enforce",
+        "governance_budgets_warning_threshold": "governance.budgets.warning_threshold",
+        "governance_risk_governor_enabled": "governance.risk_governor.enabled",
+        "governance_risk_governor_default_max_risk": "governance.risk_governor.default_max_risk",
+        "shadow_enabled": "shadow.enabled",
+        "shadow_require_for_high_risk": "shadow.require_for_high_risk",
+        "shadow_require_for_workflows_over_steps": "shadow.require_for_workflows_over_steps",
+        "shadow_workspace_keep_days": "shadow.workspace_keep_days",
+        "shadow_max_shadow_seconds": "shadow.max_shadow_seconds",
+        "shadow_allow_shell_in_shadow": "shadow.allow_shell_in_shadow",
+        "shadow_auto_promote_low_risk": "shadow.auto_promote_low_risk",
+        "shadow_compare_after_live": "shadow.compare_after_live",
     }
     data = None
     for key, config_key in mapping.items():

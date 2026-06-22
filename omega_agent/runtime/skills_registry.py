@@ -25,6 +25,12 @@ class Skill:
     version: str = "0.1.0"
     risk_level: str = "low"
     allowed_tools: list[str] | None = None
+    status: str = "active"
+    skill_type: str = "prompt"
+    definition: dict | None = None
+    test_cases: list[dict] | None = None
+    source_candidate_id: str | None = None
+    metadata: dict | None = None
 
     def __post_init__(self):
         if not self.id:
@@ -41,14 +47,17 @@ class SkillsRegistry:
         self.root = config.skills_dir or Path("~/omega_skills").expanduser()
 
     def list(self) -> list[Skill]:
-        if not self.root.exists():
-            return []
         skills: list[Skill] = []
-        for child in sorted(self.root.iterdir()):
-            if child.is_dir():
-                skill = self._load(child)
-                if skill:
-                    skills.append(skill)
+        if self.root.exists():
+            for child in sorted(self.root.iterdir()):
+                if child.is_dir():
+                    skill = self._load(child)
+                    if skill:
+                        skills.append(skill)
+        foundry_ids = {skill.id for skill in skills}
+        for skill in self._load_foundry():
+            if skill.id not in foundry_ids:
+                skills.append(skill)
         return skills
 
     def list_for_profile(self, profile: AgentProfile) -> list[Skill]:
@@ -85,6 +94,12 @@ class SkillsRegistry:
         return loaded
 
     def set_enabled(self, name: str, enabled: bool) -> Skill | None:
+        foundry = self._find_foundry(name)
+        if foundry is not None:
+            from omega_agent.skills.skill_promoter import SkillPromoter
+
+            changed = SkillPromoter(self.config).activate(foundry.id) if enabled else SkillPromoter(self.config).disable(foundry.id)
+            return self._from_stored(changed) if changed else None
         if not SAFE_NAME.match(name):
             raise ValueError("Nom de skill invalide.")
         target = self.root / name
@@ -97,6 +112,11 @@ class SkillsRegistry:
         return self._load(target)
 
     def delete(self, name: str) -> bool:
+        foundry = self._find_foundry(name)
+        if foundry is not None:
+            from omega_agent.skills.skill_store import SkillStore
+
+            return SkillStore(self.config).archive_skill(foundry.id)
         if not SAFE_NAME.match(name):
             raise ValueError("Nom de skill invalide.")
         target = self.root / name
@@ -129,4 +149,53 @@ class SkillsRegistry:
             tags=list(metadata.get("tags") or []),
             enabled=bool(metadata.get("enabled", True)),
             path=str(path),
+            status="active" if bool(metadata.get("enabled", True)) else "disabled",
+            skill_type=str(metadata.get("skill_type") or "prompt"),
+            metadata=metadata,
+        )
+
+    def _load_foundry(self) -> list[Skill]:
+        if not getattr(self.config, "skills_enabled", True):
+            return []
+        try:
+            from omega_agent.skills.skill_store import SkillStore
+
+            return [self._from_stored(item) for item in SkillStore(self.config).list_skills()]
+        except Exception:
+            return []
+
+    def _find_foundry(self, identifier: str):
+        try:
+            from omega_agent.skills.skill_store import SkillStore
+
+            return SkillStore(self.config).get_skill(identifier)
+        except Exception:
+            return None
+
+    @staticmethod
+    def _from_stored(item) -> Skill:
+        steps = item.definition.get("steps") or []
+        instructions = "\n".join(
+            f"{step.get('order', index + 1)}. {step.get('instruction') or step.get('action') or 'Review step'}"
+            for index, step in enumerate(steps)
+        )
+        return Skill(
+            id=item.id,
+            name=item.name,
+            description=item.description,
+            version=item.version,
+            instructions=instructions,
+            tools=list(item.allowed_tools or []),
+            allowed_tools=list(item.allowed_tools or []),
+            risk=item.risk_level,
+            risk_level=item.risk_level,
+            tags=["foundry", item.skill_type],
+            enabled=item.status == "active" and item.enabled,
+            path=f"db://skills/{item.id}",
+            status=item.status,
+            skill_type=item.skill_type,
+            definition=item.definition,
+            test_cases=item.test_cases,
+            source_candidate_id=item.source_candidate_id,
+            metadata=item.metadata,
         )

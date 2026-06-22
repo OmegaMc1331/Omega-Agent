@@ -34,10 +34,18 @@ SECRET_VALUE_PATTERNS = (
 )
 
 REDACTED = "[REDACTED]"
+NON_SECRET_OPERATIONAL_KEYS = {
+    "estimated_tokens",
+    "max_estimated_tokens",
+    "token_count",
+    "tokens_used",
+}
 
 
 def is_sensitive_key(key: str) -> bool:
     lowered = key.lower()
+    if lowered in NON_SECRET_OPERATIONAL_KEYS:
+        return False
     return any(fragment in lowered for fragment in SECRET_KEY_FRAGMENTS)
 
 

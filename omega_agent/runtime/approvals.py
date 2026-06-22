@@ -27,6 +27,7 @@ class Approval:
     risk_level: str = "medium"
     reason: str = ""
     arguments_json: str = "{}"
+    action_id: str | None = None
 
 
 class ApprovalsStore:
@@ -47,6 +48,7 @@ class ApprovalsStore:
         session_id: str | None = None,
         reason: str = "",
         action_type: str = "tool",
+        action_id: str | None = None,
     ) -> Approval:
         now = datetime.now(timezone.utc).isoformat()
         approval = Approval(
@@ -57,6 +59,7 @@ class ApprovalsStore:
             tool_name=action,
             arguments=arguments,
             arguments_json=json.dumps(arguments, ensure_ascii=False),
+            action_id=action_id,
             risk=risk,
             risk_level=risk,
             reason=reason,
@@ -69,9 +72,9 @@ class ApprovalsStore:
                 """
                 INSERT INTO approvals(
                     id, session_id, status, action_type, tool_name, arguments_json,
-                    risk_level, reason, created_at, resolved_at
+                    risk_level, reason, created_at, resolved_at, action_id
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     approval.id,
@@ -84,11 +87,12 @@ class ApprovalsStore:
                     approval.reason,
                     approval.created_at,
                     approval.resolved_at,
+                    approval.action_id,
                 ),
             )
         self.events.add(
             "approval.required",
-            {"approval_id": approval.id, "tool_name": action, "risk_level": risk, "reason": reason},
+            {"approval_id": approval.id, "action_id": action_id, "tool_name": action, "risk_level": risk, "reason": reason},
             session_id=session_id,
         )
         emit_reasoning_event(
@@ -97,7 +101,7 @@ class ApprovalsStore:
             "Approval requise",
             f"{action} nécessite une validation utilisateur.",
             status="pending",
-            metadata={"approval_id": approval.id, "tool_name": action, "risk_level": risk, "reason": reason, "arguments": arguments},
+            metadata={"approval_id": approval.id, "action_id": action_id, "tool_name": action, "risk_level": risk, "reason": reason, "arguments": arguments},
             config=self.config,
         )
         log_action(self.config, "approval_required", {"approval_id": approval.id, "action": action, "risk": risk})
@@ -106,7 +110,7 @@ class ApprovalsStore:
     def list(self, status: str | None = None) -> list[Approval]:
         query = """
             SELECT id, session_id, status, action_type, tool_name, arguments_json,
-                   risk_level, reason, created_at, resolved_at
+                   risk_level, reason, created_at, resolved_at, action_id
             FROM approvals
         """
         params: tuple[str, ...] = ()
@@ -130,6 +134,7 @@ class ApprovalsStore:
                 """
                 SELECT id, session_id, status, action_type, tool_name, arguments_json,
                        risk_level, reason, created_at, resolved_at
+                       , action_id
                 FROM approvals
                 WHERE id = ?
                 """,
@@ -168,4 +173,5 @@ class ApprovalsStore:
             status=row["status"],
             created_at=row["created_at"],
             resolved_at=row["resolved_at"],
+            action_id=row["action_id"] if "action_id" in row.keys() else None,
         )

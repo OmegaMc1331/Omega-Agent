@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.metadata
 import json
+import os
 import socket
 import subprocess
 import urllib.error
@@ -26,6 +27,7 @@ from omega_agent.gateway.ws import create_ws_router
 from omega_agent.runtime import OmegaRuntime
 from omega_agent.runtime.agent_profiles import AgentProfilesStore
 from omega_agent.runtime.approvals import ApprovalsStore
+from omega_agent.runtime.durable_runtime import DurableRuntime
 from omega_agent.runtime.events import EventsStore
 from omega_agent.runtime.jobs import JobsStore
 from omega_agent.runtime.memory import MemoryStore
@@ -36,6 +38,7 @@ from omega_agent.runtime.plugins_registry import PluginsRegistry
 from omega_agent.runtime.projects import ProjectsStore
 from omega_agent.runtime.performance import PerformanceStore
 from omega_agent.runtime.reasoning import ReasoningStore
+from omega_agent.runtime.context import RuntimeMode, current_runtime_mode, runtime_context
 from omega_agent.runtime.scheduler import ScheduledTasksStore, SchedulerLoop
 from omega_agent.runtime.sessions import SessionsStore
 from omega_agent.runtime.settings import SettingsStore
@@ -59,8 +62,9 @@ class PortOwner:
 
 
 class RuntimeState:
-    def __init__(self, config: OmegaConfig):
+    def __init__(self, config: OmegaConfig, runtime_mode: RuntimeMode = "server"):
         self.config = config
+        self.runtime_mode = runtime_mode
         self.version = _package_version()
         self.started_at = datetime.now(timezone.utc)
         with connect_runtime_db(config):
@@ -85,13 +89,15 @@ class RuntimeState:
         self.skills = SkillsRegistry(config)
         self.plugins = PluginsRegistry(config)
         self.performance = PerformanceStore(config)
+        self.durable = DurableRuntime(config)
         self._status_cache: tuple[float, dict] | None = None
         self._tools_cache = []
         self._skills_cache = []
         self._plugins_cache = []
         self.reload_registries(log_event=False)
-        if config.provider == "codex":
+        if config.provider == "codex" and runtime_mode == "server":
             codex_login_status_cached(config.codex_auth_cache_seconds, force=True)
+        self.recovered_runs = self.durable.recover_interrupted_runs()
         self._runtime: OmegaRuntime | None = None
         self._lock = Lock()
 
@@ -146,10 +152,12 @@ class RuntimeState:
             return self._runtime
 
 
-def create_app(config: OmegaConfig | None = None) -> FastAPI:
+def create_app(config: OmegaConfig | None = None, runtime_mode: RuntimeMode | None = None) -> FastAPI:
     cfg = config or OmegaConfig.from_env()
+    mode = runtime_mode or ("test" if os.getenv("PYTEST_CURRENT_TEST") else current_runtime_mode())
     app = FastAPI(title="Omega Gateway")
-    app.state.gateway_state = RuntimeState(cfg)
+    with runtime_context(mode):
+        app.state.gateway_state = RuntimeState(cfg, runtime_mode=mode)
     app.include_router(create_router())
     app.include_router(create_model_router())
     app.include_router(create_ws_router())
@@ -169,7 +177,8 @@ def create_app(config: OmegaConfig | None = None) -> FastAPI:
 
     @app.on_event("startup")
     async def _start_scheduler():
-        app.state.gateway_state.scheduler_loop.start()
+        if app.state.gateway_state.runtime_mode == "server":
+            app.state.gateway_state.scheduler_loop.start()
 
     @app.on_event("shutdown")
     async def _stop_scheduler():

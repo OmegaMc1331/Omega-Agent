@@ -23,13 +23,49 @@ Le provider par defaut est `codex` avec OAuth ChatGPT et le modele `gpt-5.5`. Om
 
 ## Installation Windows PowerShell
 
+### Installation sur Windows avec PowerShell
+
+Installation recommandee. Telecharge le script, lis-le si besoin, puis execute-le :
+
+```powershell
+iwr https://raw.githubusercontent.com/OmegaMc1331/Omega-Agent/main/install.ps1 -OutFile install-omega.ps1
+powershell -ExecutionPolicy Bypass -File .\install-omega.ps1
+```
+
+Installation courte optionnelle :
+
+```powershell
+irm https://raw.githubusercontent.com/OmegaMc1331/Omega-Agent/main/install.ps1 | iex
+```
+
+La version recommandee est celle avec `iwr -OutFile`, car elle permet de lire le script avant execution. N'execute jamais de code opaque depuis une URL inconnue.
+
+Apres installation :
+
+```powershell
+codex login
+omega doctor
+omega
+```
+
+Desinstallation :
+
+```powershell
+iwr https://raw.githubusercontent.com/OmegaMc1331/Omega-Agent/main/uninstall.ps1 -OutFile uninstall-omega.ps1
+powershell -ExecutionPolicy Bypass -File .\uninstall-omega.ps1
+```
+
+L'installateur installe Omega Agent dans `%LOCALAPPDATA%\OmegaAgent`, cree le workspace dans `~/omega_workspace`, prepare `.venv`, construit Omega Control si `npm` est disponible, cree `$HOME\.omega\config.json`, installe la commande globale `omega`, puis lance `omega config doctor` et `omega doctor`. Les secrets ne sont jamais demandes ni affiches. Omega a Full Access uniquement dans son workspace; les acces hors workspace restent bloques.
+
+### Installation developpeur locale
+
 ```powershell
 cd D:\Omega-Agent
 python -m venv .venv
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned
 .\.venv\Scripts\Activate.ps1
 pip install -e . pytest httpx
-Copy-Item .env.example .env
+omega config init
 ```
 
 Frontend :
@@ -47,92 +83,382 @@ codex login
 omega doctor
 ```
 
-## Configuration
+Commande globale PowerShell :
 
-```env
-OMEGA_PROVIDER=codex
-OMEGA_MODEL=gpt-5.5
-OMEGA_DEFAULT_MODEL=codex/gpt-5.5
-OMEGA_FALLBACK_MODEL=
-OMEGA_MODEL_SELECTION_ENABLED=true
-OMEGA_MODEL_AUTH_CACHE_SECONDS=300
-OMEGA_MODEL_STATUS_CACHE_SECONDS=60
-OMEGA_WORKSPACE=~/omega_workspace
-OMEGA_WORKSPACE_FULL_ACCESS=true
-OMEGA_REQUIRE_APPROVAL=false
-OMEGA_REQUIRE_APPROVAL_OUTSIDE_WORKSPACE=true
-OMEGA_SHELL_FULL_ACCESS_IN_WORKSPACE=true
-OMEGA_ALLOW_DELETE_IN_WORKSPACE=true
-OMEGA_ALLOW_GIT_WRITE_IN_WORKSPACE=true
-OMEGA_HOST=127.0.0.1
-OMEGA_PORT=8765
-OMEGA_OPEN_BROWSER=true
-OMEGA_UI_THEME=dark
-OMEGA_SKILLS_DIR=~/omega_skills
-OMEGA_PLUGINS_DIR=~/omega_plugins
-OMEGA_DB_PATH=~/.omega/omega.db
-OMEGA_SAFE_MODE=true
-OMEGA_CHANNELS_ENABLED=true
-OMEGA_WEBHOOKS_ENABLED=true
-OMEGA_TELEGRAM_ENABLED=false
-OMEGA_DISCORD_ENABLED=false
-OMEGA_TELEGRAM_BOT_TOKEN=
-OMEGA_DISCORD_BOT_TOKEN=
-OMEGA_SCHEDULER_ENABLED=false
-OMEGA_SCHEDULER_TICK_SECONDS=30
-OMEGA_BROWSER_ENABLED=false
-OMEGA_BROWSER_HEADLESS=false
-OMEGA_BROWSER_PROFILE_DIR=~/omega_workspace/.omega/browser-profile
-OMEGA_BROWSER_REQUIRE_APPROVAL=true
-OMEGA_DESKTOP_ENABLED=false
-OMEGA_DESKTOP_REQUIRE_APPROVAL=true
-OMEGA_DESKTOP_SCREENSHOTS_DIR=~/omega_workspace/.omega/screenshots
-OMEGA_REASONING_STREAM=true
-OMEGA_REASONING_DETAIL=minimal
-OMEGA_FAST_MODE=true
-OMEGA_STREAMING=true
-OMEGA_PERF_LOGGING=true
-OMEGA_STATUS_CACHE_SECONDS=60
-OMEGA_CODEX_AUTH_CACHE_SECONDS=300
-OMEGA_MAX_HISTORY_MESSAGES=20
-OMEGA_MAX_MEMORY_RESULTS=5
-OMEGA_MAX_SKILLS_IN_CONTEXT=5
-OMEGA_MAX_TOOL_DESCRIPTIONS=20
-OMEGA_LOAD_PLUGINS_ON_STARTUP=true
-OMEGA_RELOAD_PLUGINS_PER_MESSAGE=false
-OMEGA_RELOAD_SKILLS_PER_MESSAGE=false
-OMEGA_CODEX_MODE=exec
-
-OPENAI_API_KEY=
-OPENAI_BASE_URL=
-
-OPENROUTER_API_KEY=
-OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
-
-OLLAMA_BASE_URL=http://127.0.0.1:11434
-
-ANTHROPIC_API_KEY=
-GEMINI_API_KEY=
-GOOGLE_API_KEY=
-
-CUSTOM_OPENAI_BASE_URL=
-CUSTOM_OPENAI_API_KEY=
-CUSTOM_OPENAI_MODEL=
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\install-powershell-command.ps1
+. $PROFILE
+omega doctor
 ```
 
-`OPENAI_API_KEY` n'est pas requis quand `OMEGA_PROVIDER=codex`.
+## Configuration
+
+Omega Agent utilise maintenant `$HOME\.omega\config.json` comme source de verite. `.env` reste supporte temporairement comme fallback legacy, mais il n'est plus necessaire.
+
+Commandes utiles :
+
+```powershell
+omega config path
+omega config init
+omega config show
+omega config get model.default
+omega config set model.default codex/gpt-5.5
+omega config set gateway.port 8765
+omega config set workspace.full_access true
+omega config migrate-env
+omega config doctor
+```
+
+Modeles et providers :
+
+```powershell
+omega models current
+omega models set-default codex/gpt-5.5
+omega models set-fallback codex/gpt-5.5
+omega models enable-provider ollama
+omega models set-provider-base-url ollama http://127.0.0.1:11434
+omega models providers
+omega models status
+```
+
+Les cles API ne sont pas stockees en clair dans `config.json`. Pour v0.1, configure les secrets dans les variables d'environnement utilisateur Windows :
+
+```powershell
+omega secrets set-env OPENROUTER_API_KEY <value>
+omega secrets status
+```
+
+Rouvre PowerShell apres `omega secrets set-env`. `OPENAI_API_KEY` n'est pas requis quand le provider par defaut est Codex OAuth.
 
 ### Workspace Full Access
 
-`OMEGA_WORKSPACE_FULL_ACCESS=true` autorise Omega Agent a lire, creer, modifier, supprimer et executer des commandes dans `OMEGA_WORKSPACE` sans demander une approval pour chaque action workspace-safe. Les chemins hors workspace restent refuses directement, meme si `OMEGA_REQUIRE_APPROVAL=false`.
+`workspace.full_access=true` autorise Omega Agent a lire, creer, modifier, supprimer et executer des commandes dans le workspace configure sans demander une approval pour chaque action workspace-safe. Les chemins hors workspace restent refuses directement, meme si `workspace.require_approval=false`.
 
-Garde `OMEGA_WORKSPACE` sur un dossier projet dedie. Omega refuse HOME complet, les racines disque, les chemins sensibles, les secrets, les cles SSH, les cookies navigateur et les commandes systeme dangereuses. Les suppressions et les commandes shell dans le workspace restent controlables via :
+Garde `workspace.path` sur un dossier projet dedie. Omega refuse HOME complet, les racines disque, les chemins sensibles, les secrets, les cles SSH, les cookies navigateur et les commandes systeme dangereuses. Les suppressions et les commandes shell dans le workspace restent controlables via :
 
-```env
-OMEGA_SHELL_FULL_ACCESS_IN_WORKSPACE=true
-OMEGA_ALLOW_DELETE_IN_WORKSPACE=true
-OMEGA_ALLOW_GIT_WRITE_IN_WORKSPACE=true
+```powershell
+omega config set workspace.shell_full_access true
+omega config set workspace.allow_delete true
+omega config set workspace.allow_git_write true
 ```
+
+Verifications rapides :
+
+```powershell
+omega doctor
+omega workspace doctor
+omega tools test write-file
+omega tools test shell
+```
+
+En mode actif, une demande comme "Cree hello.txt avec le texte Bonjour" utilise les tools Omega et cree reellement le fichier dans le workspace sans approval. Une demande hors workspace, par exemple vers `C:\Users\<user>\Desktop`, est refusee directement sans proposer d'approval.
+
+## Durable Runtime
+
+Omega Durable Runtime transforme chaque requete en `run` persistant. Un run contient des `steps`, des checkpoints redacted, un action journal, et des snapshots de fichiers quand une action modifie le workspace.
+
+Objectifs :
+
+- tracer chaque action tool avec sa decision policy, son risque, ses arguments redacted et son observation redacted ;
+- creer un checkpoint initial puis des checkpoints autour des actions modificatrices ;
+- creer un snapshot recuperable avant modification, suppression, copie ecrasante ou deplacement de fichier ;
+- permettre pause, resume, cancel, replay dry-run et rollback depuis CLI ou Omega Control ;
+- detecter au demarrage les runs restes `running` apres crash, sans relancer automatiquement d'action destructive.
+
+Les snapshots sont stockes dans `OMEGA_WORKSPACE\.omega\snapshots\<run_id>\<snapshot_id>`. Ce choix garde les copies dans la frontiere de securite du workspace et evite tout acces global au filesystem.
+
+Commandes runtime :
+
+```powershell
+omega runs list
+omega runs show <run_id>
+omega runs resume <run_id>
+omega runs cancel <run_id>
+omega runs replay <run_id>
+omega rollback list
+omega rollback snapshot <snapshot_id>
+omega rollback run <run_id>
+omega runtime doctor
+```
+
+Configuration runtime dans `$HOME\.omega\config.json` :
+
+```powershell
+omega config set runtime.checkpoints.enabled true
+omega config set runtime.snapshots.enabled true
+omega config set runtime.snapshots.max_file_size_mb 10
+omega config set runtime.snapshots.keep_days 30
+omega config set runtime.replay.enabled true
+omega config set runtime.max_tool_iterations 5
+omega config set runtime.max_actions_per_turn 10
+omega config set runtime.max_run_seconds 300
+```
+
+Rollback securise :
+
+- rollback restaure uniquement des chemins dans `OMEGA_WORKSPACE` ;
+- un fichier qui existait avant est restaure depuis son snapshot ;
+- un fichier cree par l'action est supprime au rollback ;
+- les gros fichiers au-dessus de `runtime.snapshots.max_file_size_mb` sont journalises mais marques comme rollback partiel indisponible ;
+- les secrets, tokens, cookies, cles SSH et chemins sensibles restent redacted ou refuses.
+
+Omega Control expose les pages `Runs`, `Timeline`, `Rollback` et `Capabilities`. La page Runs affiche le statut, les steps, les tool calls, les checkpoints et les snapshots. La page Rollback permet de restaurer un snapshot avec confirmation.
+
+## AG-UI Event Protocol
+
+Omega persiste maintenant les evenements agent-utilisateur dans `events_v2`, avec un format versionne `ag-ui.v1`. Les domaines couvrent chat, messages, runs, steps, tools, approvals, policies, snapshots, rollback, workflows, memory, evals, connectors et self-healing.
+
+Les evenements passent par `EventBus`, sont redacted avant stockage et ne diffusent pas les evenements `internal` a l'UI. Le WebSocket `/ws` accepte `last_event_id` pour rejouer les evenements manques apres reconnexion et envoie un heartbeat regulier.
+
+Commandes :
+
+```powershell
+omega events list
+omega events show <event_id>
+omega events replay --run <run_id>
+omega events tail
+omega events types
+```
+
+Configuration :
+
+```powershell
+omega config set events.enabled true
+omega config set events.persist true
+omega config set events.replay_enabled true
+omega config set events.max_replay_events 500
+omega config set events.redaction_enabled true
+omega config set events.websocket_heartbeat_seconds 20
+```
+
+Omega Control expose `Timeline` et `Event Inspector` pour filtrer, inspecter et rejouer les evenements redacted. Les secrets, tokens, Authorization headers, cookies, cles privees et chemins sensibles restent masques.
+
+## Omega Research Agent + Evidence Graph
+
+Le profil `omega-research` planifie une recherche, collecte des sources locales ou via connecteurs read-only, extrait des claims, relie chaque claim a des preuves directes, calcule une confiance et produit un rapport Markdown avec incertitudes et limites.
+
+Regles de securite :
+
+- aucun shell et aucun browser par defaut ;
+- le web reste desactive tant qu'un connecteur web/search read-only n'est pas configure et que `research.web_enabled` reste `false` ;
+- les contenus externes sont `untrusted` et leurs instructions sont ignorees ;
+- aucune citation ou URL n'est inventee ;
+- les fichiers locaux sont cites par chemin relatif au workspace ;
+- les exports Markdown/JSON restent sous `OMEGA_WORKSPACE/research_reports` et sont snapshots via Durable Runtime avant ecriture.
+
+Commandes :
+
+```powershell
+omega research start "Quelles decisions d'architecture sont documentees ?"
+omega research list
+omega research show <research_id>
+omega research sources <research_id>
+omega research claims <research_id>
+omega research export <research_id> --format markdown
+omega research export <research_id> --format json
+```
+
+Endpoints :
+
+```text
+GET  /api/research
+POST /api/research
+GET  /api/research/{id}
+POST /api/research/{id}/cancel
+GET  /api/research/{id}/sources
+GET  /api/research/{id}/claims
+GET  /api/research/{id}/evidence
+GET  /api/research/{id}/graph
+POST /api/research/{id}/export
+```
+
+Configuration :
+
+```powershell
+omega config set research.enabled true
+omega config set research.max_sources 20
+omega config set research.max_claims 50
+omega config set research.require_evidence_for_claims true
+omega config set research.export_dir research_reports
+omega config set research.web_enabled false
+omega config set research.external_sources_untrusted true
+```
+
+Omega Control expose les pages `Research`, `Research Run` et `Evidence Graph`.
+
+## Omega Skill Foundry v1
+
+Skill Foundry analyse les runs et workflows réussis, les séquences d'actions, les scores d'eval et le feedback utilisateur pour proposer des candidates reviewables. Une candidate n'est jamais activée automatiquement : acceptation crée une draft locale versionnée, les tests statiques vérifient capabilities/policy/secrets, puis l'utilisateur active explicitement la version testée.
+
+```powershell
+omega skills candidates
+omega skills detect
+omega skills accept <candidate_id>
+omega skills reject <candidate_id>
+omega skills show <skill_id>
+omega skills test <skill_id>
+omega skills activate <skill_id>
+omega skills disable <skill_id>
+omega skills list
+```
+
+Règles principales :
+
+- minimum deux runs similaires réussis, sauf trajectoire explicitement marquée réutilisable ;
+- runs en échec final, rollback critique et traces contenant des secrets non redacted exclus ;
+- skills importées ou issues de contenu externe créées `draft` et `untrusted` ;
+- aucune commande générée n'est exécutée pendant les tests v1 ;
+- une skill active reste soumise au Capability Control Plane, au profil agent et à la policy Omega ;
+- les skills disabled ne sont pas injectées dans le contexte.
+
+Configuration :
+
+```powershell
+omega config set skills.enabled true
+omega config set skills.foundry_enabled true
+omega config set skills.auto_detect_candidates false
+omega config set skills.min_successful_runs_for_candidate 2
+omega config set skills.require_user_approval_for_promotion true
+omega config set skills.max_skills_in_context 5
+omega config set skills.test_before_activation true
+```
+
+Omega Control expose `Skill Foundry`, `Skills` et `Skill Details`.
+
+## Omega Budget & Risk Governor v1
+
+Budget Governor applique côté backend des limites de durée, tool calls, actions, shell, fichiers, suppressions, rollbacks, retries, appels externes/connecteurs/providers, coût estimé, tokens et niveau de risque. Les profils se combinent par scope (`global`, `project`, `session`, `agent_profile`, `workflow`) et la limite la plus restrictive gagne.
+
+Profils intégrés : `Default Local`, `Strict`, `Developer Workspace` et `Mobile`. Seul `Default Local` est actif par défaut ; les autres servent de templates à activer ou scoper explicitement.
+
+```powershell
+omega budgets profiles
+omega budgets show <profile_id>
+omega budgets usage
+omega budgets violations
+omega budgets simulate --tool write_file --risk high --category reversible_write
+omega budgets doctor
+```
+
+Règles :
+
+- chaque tool call est vérifié avant exécution ;
+- une action refusée par budget ou risque n’atteint jamais le handler ;
+- un dépassement peut pauser le run/workflow, refuser l’action ou demander une approval ;
+- `system_sensitive` reste refusé par défaut et `external_side_effect` demande une approval ;
+- retries, self-healing et rollbacks consomment leurs propres quotas ;
+- les décisions budget sont persistées dans `action_journal` et les violations apparaissent dans la timeline événementielle ;
+- Budget Governor ajoute des restrictions à Policy Studio, sans jamais élargir une permission.
+
+```powershell
+omega config set governance.budgets.enabled true
+omega config set governance.budgets.default_profile "Default Local"
+omega config set governance.budgets.enforce true
+omega config set governance.budgets.warning_threshold 0.8
+omega config set governance.risk_governor.enabled true
+omega config set governance.risk_governor.default_max_risk high
+```
+
+Omega Control expose les pages `Budgets` et `Risk Governor`.
+
+## Omega Shadow-to-Live Execution Twin v1
+
+Shadow mode compile un objectif ou un workflow en plan, exécute les tools compatibles dans `.omega/shadow/<id>/workspace`, calcule un diff prévu, vérifie les invariants et produit un rapport risque/coût. Le workspace réel n’est jamais utilisé comme cible pendant la simulation.
+
+```powershell
+omega shadow create "crée un fichier test-shadow.txt avec OK"
+omega shadow run <shadow_id>
+omega shadow show <shadow_id>
+omega shadow diff <shadow_id>
+omega shadow risk <shadow_id>
+omega shadow promote <shadow_id> --approved-by user
+omega shadow reject <shadow_id>
+omega shadow list
+```
+
+Les opérations externes en écriture, browser/desktop et autres effets non isolables sont simulés ou marqués `skipped`. Une promotion high-risk requiert une validation explicite, crée un run Durable Runtime normal et repasse par Policy Studio, Budget Governor, snapshots, approvals et rollback. La comparaison shadow/live est persistée après succès.
+
+Omega Control expose `Shadow Runs`, `Shadow Run Details` et `Run in Shadow` pour les workflows.
+
+## Project Memory + Provenance
+
+Omega Project Memory stocke des souvenirs editables et sourcés dans SQLite : decisions, preferences, procedures, warnings, notes projet et observations outils. Chaque entree a un scope (`global`, `project`, `session`, `agent`, `run`), une provenance, une confiance, une importance, des tags et un statut (`active`, `archived`, `deleted`).
+
+Regles de securite :
+
+- provenance requise par defaut ;
+- suppression logique par defaut, pas de suppression physique opaque ;
+- secrets, tokens, cles API, mots de passe, chemins `.ssh` et `Authorization` sont redacted ou refuses avant stockage ;
+- les memoires `archived` et `deleted` ne sont jamais injectees dans le contexte ;
+- le context builder injecte seulement les memoires pertinentes, limitees par `memory.max_context_memories`.
+
+Commandes memoire :
+
+```powershell
+omega memory list
+omega memory search <query>
+omega memory add --scope project --content "Decision utile"
+omega memory delete <memory_id>
+omega memory suggestions
+omega memory accept <suggestion_id>
+omega memory reject <suggestion_id>
+omega memory compact --project <project_id>
+omega decisions list
+omega decisions add "Titre" "Decision" --reason "Pourquoi"
+omega decisions archive <decision_id>
+```
+
+Configuration memoire dans `$HOME\.omega\config.json` :
+
+```powershell
+omega config set memory.enabled true
+omega config set memory.project_memory_enabled true
+omega config set memory.max_context_memories 8
+omega config set memory.require_provenance true
+omega config set memory.compaction_enabled true
+```
+
+Omega Control expose `Memory`, `Decisions` et `Project Knowledge` pour rechercher, creer, modifier, archiver ou supprimer logiquement les souvenirs, voir leur provenance et traiter les suggestions pending.
+
+## Code Workspace + Self-Healing
+
+Le profil `omega-coder` specialise Omega Agent pour le travail code dans le workspace : scan du repo, detection de stack, execution de tests, analyse d'erreurs, patch minimal, diff et commit local optionnel. Ce profil reste soumis aux memes frontieres que les autres tools Omega : aucune action hors workspace, pas de `git push` automatique, pas de commande systeme dangereuse.
+
+Commandes code :
+
+```powershell
+omega code scan
+omega code status
+omega code test
+omega code diff
+omega code patch-plan --problem "Erreur a corriger"
+omega code commit "Message local"
+omega code doctor
+omega self-healing status
+omega self-healing test "ModuleNotFoundError: No module named 'x'"
+```
+
+Configuration code dans `$HOME\.omega\config.json` :
+
+```powershell
+omega config set code.enabled true
+omega config set code.auto_scan true
+omega config set code.test_timeout_seconds 120
+omega config set code.max_output_chars 12000
+omega config set code.allow_npm_install true
+omega config set code.allow_pip_install true
+omega config set code.allow_git_commit true
+omega config set code.allow_git_push false
+omega config set self_healing.enabled true
+omega config set self_healing.max_attempts 1
+omega config set self_healing.auto_apply_safe_recoveries false
+```
+
+Le scanner detecte Python, Node/TypeScript, frameworks courants, fichiers de config, entrypoints, commandes de test/build et statut git. Les executions de tests passent par une validation de commande, utilisent `cwd=OMEGA_WORKSPACE`, tronquent et redactent stdout/stderr, puis stockent un `test_run` observable.
+
+Self-Healing v1 classe les erreurs connues (`command_not_found`, `module_not_found`, `pytest`/npm failure, `git_not_repository`, `port_in_use`, `json_decode_error`, `permission_denied`, etc.) et propose une recuperation. Par defaut, Omega n'applique pas automatiquement les recoveries : il journalise la suggestion et laisse l'utilisateur valider les actions potentiellement risquées.
+
+Omega Control expose `Code Workspace`, `Test Runs` et `Repo Insights` pour voir le resume du repo, lancer un scan/test, lire les erreurs classees, consulter le diff et suivre les patch plans.
 
 ## Commandes
 
@@ -144,6 +470,12 @@ omega chat
 omega doctor
 omega ui dev
 omega tools list
+omega tools test write-file
+omega tools test shell
+omega workspace doctor
+omega runtime doctor
+omega runs list
+omega rollback list
 omega models status
 omega models list
 omega models set codex/gpt-5.5
@@ -151,7 +483,16 @@ omega models test ollama/llama3.3
 omega skills list
 omega plugins list
 omega jobs list
+omega memory list
 omega memory search
+omega memory suggestions
+omega decisions list
+omega decisions add
+omega capabilities list
+omega code scan
+omega code test
+omega code diff
+omega code doctor
 omega security audit
 omega security audit --json
 omega security audit --fix-safe
@@ -161,6 +502,67 @@ omega config show
 `omega` demarre Omega Gateway sur `127.0.0.1:8765` et ouvre Omega Control si `OMEGA_OPEN_BROWSER=true`. Si Omega Gateway ecoute deja sur ce host/port, `omega` affiche que Gateway est deja lance et ouvre simplement l'interface web.
 
 `omega serve` demarre le gateway sans ouverture automatique ; `omega serve --no-open` est explicitement non ouvrant. `omega serve` refuse de lancer une deuxieme instance sur le meme port.
+
+### Acces mobile via Tailscale
+
+Le mode mobile recommande est Tailscale Serve. Omega Gateway reste sur `127.0.0.1:8765` et Tailscale publie ce service uniquement dans ton tailnet, sans exposition publique.
+
+Configuration par defaut :
+
+```powershell
+omega config get mobile.mode
+# tailscale
+```
+
+Preparation :
+
+1. Installer Tailscale sur le PC.
+2. Installer Tailscale sur le telephone.
+3. Se connecter au meme compte Tailscale sur les deux appareils.
+4. Lancer Omega sur le PC :
+
+```powershell
+omega
+```
+
+5. Dans un autre PowerShell, publier Omega Control dans le tailnet :
+
+```powershell
+omega mobile tailscale status
+omega mobile tailscale serve
+omega mobile tailscale url
+```
+
+6. Ouvrir l'URL affichee sur le telephone.
+
+Pour arreter la publication Tailscale d'Omega :
+
+```powershell
+omega mobile tailscale stop
+```
+
+Omega ne lance pas Tailscale Funnel automatiquement. Funnel expose un service plus largement sur Internet; ne l'active qu'avec une confirmation explicite et une review de securite. Une auth mobile reste optionnelle, mais recommandee des que l'interface est accessible depuis un autre appareil.
+
+### Commande globale PowerShell
+
+Pour lancer `omega`, `omega doctor`, `omega models status` ou `omega security audit` depuis n'importe quel dossier Windows PowerShell, installe la fonction globale dans ton `$PROFILE` :
+
+```powershell
+cd D:\Omega-Agent
+powershell -ExecutionPolicy Bypass -File .\scripts\install-powershell-command.ps1
+. $PROFILE
+omega doctor
+```
+
+Le script verifie que `D:\Omega-Agent\.venv\Scripts\omega.exe` existe, cree `$PROFILE` si necessaire, puis ajoute uniquement un bloc balise Omega. Il ne duplique pas le bloc existant.
+
+Desinstallation :
+
+```powershell
+cd D:\Omega-Agent
+powershell -ExecutionPolicy Bypass -File .\scripts\uninstall-powershell-command.ps1
+. $PROFILE
+```
 
 Diagnostic port Gateway en PowerShell :
 
@@ -276,6 +678,8 @@ Tous les events passent par redaction avant stockage/diffusion. Les events `inte
 
 - Bind par defaut : `127.0.0.1:8765`.
 - Tout bind LAN doit etre explicite et affiche un avertissement.
+- L'acces mobile recommande passe par `omega mobile tailscale serve`, qui utilise Tailscale Serve dans le tailnet et garde Gateway local.
+- Tailscale Funnel n'est jamais active automatiquement, car il expose plus largement sur Internet.
 - Les outils fichiers et shell restent scopes a `OMEGA_WORKSPACE`.
 - Le projet `default` pointe vers `OMEGA_WORKSPACE`; les autres projets ont leur propre `root_path` sandboxe.
 - Une session peut etre liee a un projet. Les outils fichiers, shell et git utilisent alors le workspace du projet actif.
@@ -316,6 +720,7 @@ Le rapport retourne un score et des findings :
 Zones auditees :
 
 - Gateway : bind local, port, CORS, exposition LAN.
+- Mobile : mode Tailscale, Gateway local, rappel Funnel/auth mobile.
 - Tools : shell/write, approvals, shell allowlist, commandes dangereuses.
 - Plugins : trust levels, manifests invalides, permissions critical, symlinks.
 - Skills : chemins hors skills dir, instructions suspectes, tools sensibles.
@@ -580,7 +985,7 @@ Invoke-RestMethod -Method Post http://127.0.0.1:8765/api/plugins/example-plugin/
 
 ```powershell
 cd D:\Omega-Agent
-.\.venv\Scripts\python -m pytest --basetemp .tmp\pytest
+.\.venv\Scripts\python -m pytest
 cd omega_control
 npm run build
 ```

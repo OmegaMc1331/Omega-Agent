@@ -6,8 +6,11 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from omega_agent.config import OmegaConfig
+from omega_agent.events.event_bus import EventBus
+from omega_agent.events.protocol import infer_level, infer_source
 from omega_agent.runtime.storage import connect_runtime_db
 from omega_agent.security import log_action
+from omega_agent.security.redaction import redact
 
 REASONING_EVENT_TYPES = {
     "reasoning.started",
@@ -46,18 +49,34 @@ class EventsStore:
             pass
 
     def add(self, event_type: str, payload: dict, session_id: str | None = None) -> RuntimeEvent:
+        redacted_payload = redact(payload)
         event = RuntimeEvent(
             id=uuid4().hex,
             type=event_type,
-            payload=payload,
+            payload=redacted_payload,
             created_at=datetime.now(timezone.utc).isoformat(),
-            session_id=session_id or payload.get("session_id"),
+            session_id=session_id or redacted_payload.get("session_id"),
         )
         with connect_runtime_db(self.config) as conn:
             conn.execute(
                 "INSERT INTO events(id, type, session_id, payload_json, created_at) VALUES (?, ?, ?, ?, ?)",
                 (event.id, event.type, event.session_id, json.dumps(event.payload, ensure_ascii=False), event.created_at),
             )
+        if getattr(self.config, "events_enabled", True):
+            try:
+                EventBus(self.config).emit(
+                    event_type,
+                    redacted_payload,
+                    session_id=event.session_id,
+                    run_id=_optional_str(redacted_payload.get("run_id")),
+                    step_id=_optional_str(redacted_payload.get("step_id")),
+                    source=infer_source(event_type),
+                    level=infer_level(event_type),
+                    visibility=_visibility_for_event(event_type),
+                    metadata={"legacy_event_id": event.id},
+                )
+            except Exception:
+                pass
         log_action(self.config, "event", {"type": event_type, "session_id": event.session_id})
         return event
 
@@ -87,3 +106,18 @@ class EventsStore:
             )
             for row in rows
         ]
+
+
+def _visibility_for_event(event_type: str) -> str:
+    if event_type in REASONING_EVENT_TYPES and event_type.endswith((".analysis", ".plan")):
+        return "redacted"
+    if event_type.endswith(".internal"):
+        return "internal"
+    return "public"
+
+
+def _optional_str(value) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None

@@ -15,6 +15,7 @@ def _shell_env(config: OmegaConfig) -> dict[str, str]:
         "HOME": str(config.workspace),
         "USERPROFILE": str(config.workspace),
         "OMEGA_WORKSPACE": str(config.workspace),
+        "GIT_CEILING_DIRECTORIES": str(config.workspace.parent),
         "PATH": os.environ.get("PATH", ""),
         "PYTHONIOENCODING": "utf-8",
     }

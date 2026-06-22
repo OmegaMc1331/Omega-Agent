@@ -1,0 +1,96 @@
+from __future__ import annotations
+
+DEFAULT_BUDGET_PROFILES = [
+    {
+        "id": "default-local",
+        "name": "Default Local",
+        "description": "Default bounded local-agent budget.",
+        "enabled": True,
+        "scope_type": "global",
+        "scope_id": None,
+        "limits": {
+            "max_run_seconds": 300,
+            "max_tool_calls": 10,
+            "max_actions": 15,
+            "max_shell_commands": 5,
+            "max_files_changed": 20,
+            "max_files_deleted": 5,
+            "max_rollbacks": 5,
+            "max_retries": 1,
+            "max_risk_level": "high",
+            "max_external_calls": 3,
+        },
+    },
+    {
+        "id": "strict",
+        "name": "Strict",
+        "description": "Tight profile for controlled or untrusted tasks.",
+        "enabled": False,
+        "scope_type": "global",
+        "scope_id": None,
+        "limits": {
+            "max_run_seconds": 120,
+            "max_tool_calls": 5,
+            "max_files_changed": 5,
+            "max_files_deleted": 0,
+            "max_risk_level": "medium",
+            "max_external_calls": 0,
+        },
+    },
+    {
+        "id": "developer-workspace-budget",
+        "name": "Developer Workspace",
+        "description": "Larger workspace budget with approval for external side effects.",
+        "enabled": False,
+        "scope_type": "global",
+        "scope_id": None,
+        "limits": {
+            "max_run_seconds": 600,
+            "max_tool_calls": 25,
+            "max_shell_commands": 10,
+            "max_files_changed": 50,
+            "max_files_deleted": 10,
+            "max_risk_level": "high",
+            "external_side_effect": "approval_required",
+        },
+    },
+    {
+        "id": "mobile-budget",
+        "name": "Mobile",
+        "description": "Conservative budget for mobile-originated tasks.",
+        "enabled": False,
+        "scope_type": "global",
+        "scope_id": None,
+        "limits": {
+            "max_run_seconds": 120,
+            "max_tool_calls": 5,
+            "max_files_changed": 5,
+            "max_files_deleted": 0,
+            "max_risk_level": "medium",
+            "destructive_write": "approval_required",
+        },
+    },
+]
+
+NUMERIC_LIMITS = {
+    "max_run_seconds",
+    "max_tool_calls",
+    "max_actions",
+    "max_shell_commands",
+    "max_files_changed",
+    "max_files_deleted",
+    "max_rollbacks",
+    "max_retries",
+    "max_external_calls",
+    "max_connector_calls",
+    "max_estimated_cost",
+    "max_estimated_tokens",
+}
+
+ACTION_CATEGORY_DEFAULTS = {
+    "read_only": "allow",
+    "reversible_write": "allow",
+    "destructive_write": "allow",
+    "external_side_effect": "approval_required",
+    "system_sensitive": "deny",
+}
