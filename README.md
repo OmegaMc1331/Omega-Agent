@@ -21,14 +21,6 @@ Omega Agent permet de :
 - définir et exécuter des workflows ;
 - configurer et sélectionner des providers et modèles selon les capacités disponibles.
 
-## Ce qu’Omega Agent n’est pas
-
-- Ce n’est pas un simple wrapper Codex. Omega Agent possède son propre Gateway, son runtime, ses tools, ses policies, sa mémoire, ses workflows et son interface.
-- Ce n’est pas un agent sans contrôle de sécurité. Les outils passent par des validations de chemin, de risque, de policy et, selon la configuration, d’approval.
-- Ce n’est pas un outil conçu pour écrire partout sur la machine. La frontière principale reste le workspace.
-- Ce n’est pas un service cloud obligatoire. Le Gateway, Omega Control et la base SQLite fonctionnent localement.
-- Ce n’est pas une garantie d’autonomie illimitée. Les actions externes, sensibles ou expérimentales restent désactivées, refusées ou soumises à validation selon leur configuration.
-
 ## Fonctionnalités principales
 
 ### Omega Control
