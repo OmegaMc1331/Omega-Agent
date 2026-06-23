@@ -7,6 +7,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from omega_agent.providers.catalog import builtin_provider_configs
+
 CONFIG_VERSION = 1
 CONFIG_ENV_VAR = "OMEGA_CONFIG_PATH"
 
@@ -23,6 +25,7 @@ SECRET_NAMES = {
 
 
 def default_config() -> dict[str, Any]:
+    provider_items = builtin_provider_configs()
     return {
         "version": CONFIG_VERSION,
         "app": {
@@ -58,7 +61,14 @@ def default_config() -> dict[str, Any]:
             "auth_cache_seconds": 300,
             "status_cache_seconds": 60,
         },
+        "models": {
+            "default": "codex/gpt-5.5",
+            "fallback": None,
+            "recent": [],
+        },
         "providers": {
+            "default": "codex",
+            "items": provider_items,
             "codex": {
                 "enabled": True,
                 "auth": {"type": "codex_oauth"},
@@ -414,7 +424,9 @@ def load_config(path: Path | None = None) -> dict[str, Any]:
             raise ValueError(f"Configuration JSON invalide: {target}") from exc
         if not isinstance(loaded, dict):
             raise ValueError("config.json doit contenir un objet JSON.")
+        _migrate_config_shape(loaded)
         _deep_merge(data, loaded)
+    _synchronize_compatibility_paths(data)
     return data
 
 
@@ -423,6 +435,7 @@ def save_config(config: dict[str, Any], path: Path | None = None) -> Path:
     target.parent.mkdir(parents=True, exist_ok=True)
     payload = copy.deepcopy(config)
     payload.setdefault("version", CONFIG_VERSION)
+    _synchronize_compatibility_paths(payload)
     tmp = target.with_suffix(target.suffix + ".tmp")
     tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     tmp.replace(target)
@@ -448,6 +461,16 @@ def get_config_value(path: str, config: dict[str, Any] | None = None, file_path:
 
 def set_config_value(path: str, value: Any, config: dict[str, Any] | None = None, file_path: Path | None = None) -> dict[str, Any]:
     data = copy.deepcopy(config) if config is not None else load_config(file_path)
+    _set_config_path(data, path, value)
+    alias = _compatibility_alias(path)
+    if alias:
+        _set_config_path(data, alias, value)
+    if config is None:
+        save_config(data, file_path)
+    return data
+
+
+def _set_config_path(data: dict[str, Any], path: str, value: Any) -> None:
     parts = _split_path(path)
     current = data
     for part in parts[:-1]:
@@ -456,9 +479,6 @@ def set_config_value(path: str, value: Any, config: dict[str, Any] | None = None
             raise ValueError(f"Chemin non objet: {'.'.join(parts[:-1])}")
         current = next_value
     current[parts[-1]] = value
-    if config is None:
-        save_config(data, file_path)
-    return data
 
 
 def unset_config_value(path: str, config: dict[str, Any] | None = None, file_path: Path | None = None) -> dict[str, Any]:
@@ -509,22 +529,22 @@ def migrate_env_to_config(env_path: Path | None = None, *, force: bool = False, 
 
 def redact_config_for_display(config: dict[str, Any] | None = None) -> dict[str, Any]:
     data = copy.deepcopy(config if config is not None else load_config())
-    for provider in data.get("providers", {}).values():
+    for provider in _provider_items(data).values():
         if isinstance(provider, dict):
-            auth = provider.get("auth")
-            if isinstance(auth, dict) and auth.get("secret"):
-                auth["configured"] = bool(os.getenv(str(auth["secret"]), "").strip())
+            env_name = provider.get("api_key_env")
+            if env_name:
+                provider["configured"] = bool(os.getenv(str(env_name), "").strip())
     return _redact_local(data)
 
 
 def expected_secret_status(config: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     data = config if config is not None else load_config()
     names = set(SECRET_NAMES)
-    for provider in data.get("providers", {}).values():
+    for provider in _provider_items(data).values():
         if isinstance(provider, dict):
-            auth = provider.get("auth")
-            if isinstance(auth, dict) and auth.get("secret"):
-                names.add(str(auth["secret"]))
+            env_name = provider.get("api_key_env")
+            if env_name:
+                names.add(str(env_name))
     return [{"name": name, "configured": bool(os.getenv(name, "").strip())} for name in sorted(names)]
 
 
@@ -561,6 +581,108 @@ def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any
         else:
             base[key] = value
     return base
+
+
+def _migrate_config_shape(config: dict[str, Any]) -> None:
+    model = config.get("model")
+    models = config.setdefault("models", {})
+    providers = config.setdefault("providers", {})
+    if not isinstance(providers, dict):
+        raise ValueError("providers doit contenir un objet JSON.")
+    items = providers.get("items")
+    if not isinstance(items, dict):
+        items = {}
+    for name, value in list(providers.items()):
+        if name in {"default", "items"} or not isinstance(value, dict):
+            continue
+        items.setdefault(name, copy.deepcopy(value))
+    providers["items"] = items
+    legacy_default = model.get("default") if isinstance(model, dict) else None
+    explicit_default = models.get("default") if isinstance(models, dict) else None
+    default_provider = str(
+        providers.get("default")
+        or _provider_from_model(str(explicit_default or legacy_default or "codex/gpt-5.5"))
+    )
+    providers["default"] = default_provider
+    if isinstance(models, dict):
+        if not explicit_default and not legacy_default:
+            provider_settings = items.get(default_provider)
+            provider_model = (
+                provider_settings.get("default_model")
+                if isinstance(provider_settings, dict)
+                else None
+            )
+            explicit_default = (
+                f"{default_provider}/{provider_model}"
+                if provider_model
+                else "codex/gpt-5.5"
+            )
+        models.setdefault("default", explicit_default or legacy_default or "codex/gpt-5.5")
+        models.setdefault(
+            "fallback",
+            model.get("fallback") if isinstance(model, dict) else None,
+        )
+        models.setdefault("recent", [])
+
+
+def _synchronize_compatibility_paths(config: dict[str, Any]) -> None:
+    model = config.setdefault("model", {})
+    models = config.setdefault("models", {})
+    if isinstance(model, dict) and isinstance(models, dict):
+        default_model = models.get("default", model.get("default", "codex/gpt-5.5"))
+        fallback_model = models.get("fallback", model.get("fallback"))
+        models["default"] = default_model
+        models["fallback"] = fallback_model
+        models.setdefault("recent", [])
+        model["default"] = default_model
+        model["fallback"] = fallback_model
+
+    providers = config.setdefault("providers", {})
+    if not isinstance(providers, dict):
+        return
+    items = providers.setdefault("items", {})
+    if not isinstance(items, dict):
+        return
+    providers.setdefault("default", _provider_from_model(str(models.get("default") or "codex/gpt-5.5")))
+    for name, item in list(items.items()):
+        if not isinstance(item, dict):
+            continue
+        legacy = providers.get(name)
+        merged: dict[str, Any] = {}
+        if isinstance(legacy, dict):
+            _deep_merge(merged, legacy)
+        _deep_merge(merged, item)
+        items[name] = merged
+        providers[name] = copy.deepcopy(merged)
+
+
+def _compatibility_alias(path: str) -> str | None:
+    if path == "model.default":
+        return "models.default"
+    if path == "models.default":
+        return "model.default"
+    if path == "model.fallback":
+        return "models.fallback"
+    if path == "models.fallback":
+        return "model.fallback"
+    parts = _split_path(path)
+    if len(parts) >= 4 and parts[:2] == ["providers", "items"]:
+        return ".".join(["providers", parts[2], *parts[3:]])
+    if len(parts) >= 3 and parts[0] == "providers" and parts[1] not in {"default", "items"}:
+        return ".".join(["providers", "items", parts[1], *parts[2:]])
+    return None
+
+
+def _provider_items(config: dict[str, Any]) -> dict[str, dict]:
+    providers = config.get("providers")
+    if not isinstance(providers, dict):
+        return {}
+    items = providers.get("items")
+    return items if isinstance(items, dict) else {}
+
+
+def _provider_from_model(model_ref: str) -> str:
+    return model_ref.split("/", 1)[0] if "/" in model_ref else "codex"
 
 
 def _read_env_file(path: Path) -> dict[str, str]:

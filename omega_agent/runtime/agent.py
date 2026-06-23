@@ -434,17 +434,44 @@ class OmegaRuntime:
         if perf:
             perf.mark("provider_started")
         try:
-            if provider_id == "codex":
+            native_tools = (
+                _provider_tool_schemas(tools)
+                if provider.supports_tools() and tools
+                else None
+            )
+            if active_config.streaming and provider.supports_streaming():
+                chunks = []
+                async for chunk in provider.stream_chat(
+                    model_ref,
+                    codex_history,
+                    message,
+                    tools=native_tools,
+                ):
+                    chunks.append(chunk)
+                output = "".join(chunks)
+                from omega_agent.providers.base import CompletionResult
+
+                result = CompletionResult(output)
+            else:
+                result = await asyncio.to_thread(
+                    provider.chat,
+                    model_ref,
+                    codex_history,
+                    message,
+                    tools=native_tools,
+                )
+                output = result.content
+            if False and provider_id == "codex":
                 output = await asyncio.to_thread(run_codex_turn, active_config, codex_history, message)
                 if output == CODEX_LOGIN_HINT:
                     raise ProviderAuthError("Codex n'est pas connecté. Lance : codex login")
-            elif provider_id == "openai" and Runner is not None:
+            elif False and provider_id == "openai" and Runner is not None:
                 input_history = [{"role": item.role, "content": item.content} for item in history]
                 input_history.append({"role": "user", "content": message})
                 with use_project_config(active_config):
                     result = await Runner.run(build_agent(active_config, profile), input_history)
                 output = str(result.final_output)
-            else:
+            elif False:
                 result = await asyncio.to_thread(provider.complete, model_ref, codex_history, message)
                 output = result.content
             if perf:
@@ -558,6 +585,27 @@ def _extract_omega_actions(output: str) -> list[dict]:
         if actions:
             return actions
     return []
+
+
+def _provider_tool_schemas(tools: list) -> list[dict]:
+    schemas: list[dict] = []
+    for tool in tools:
+        if not getattr(tool, "enabled", True):
+            continue
+        tool_id = str(getattr(tool, "id", "") or "")
+        if not tool_id:
+            continue
+        schemas.append(
+            {
+                "type": "function",
+                "function": {
+                    "name": tool_id,
+                    "description": str(getattr(tool, "description", "") or ""),
+                    "parameters": dict(getattr(tool, "input_schema", {}) or {}),
+                },
+            }
+        )
+    return schemas
 
 
 def _actions_from_payload(payload: object) -> list[dict]:

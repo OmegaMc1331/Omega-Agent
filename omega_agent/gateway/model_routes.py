@@ -115,7 +115,7 @@ def create_model_router() -> APIRouter:
         provider = request.app.state.gateway_state.model_selector.provider(provider_id)
         if provider is None:
             raise HTTPException(status_code=404, detail="Provider introuvable.")
-        return provider.check_auth().as_api()
+        return provider.test_connection().as_api()
 
     @router.post("/api/models/providers/{provider_id}/refresh-catalog")
     async def refresh_provider_catalog(provider_id: str, request: Request):

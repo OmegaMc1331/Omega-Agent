@@ -35,6 +35,10 @@ SECRET_VALUE_PATTERNS = (
 
 REDACTED = "[REDACTED]"
 NON_SECRET_OPERATIONAL_KEYS = {
+    "api_key_env",
+    "auth_method",
+    "auth_type",
+    "configured",
     "estimated_tokens",
     "max_estimated_tokens",
     "token_count",

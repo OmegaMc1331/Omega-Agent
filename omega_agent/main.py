@@ -204,29 +204,57 @@ def main(argv: Sequence[str] | None = None) -> int:
     tailscale_subparsers = tailscale_parser.add_subparsers(dest="tailscale_command")
     for name in ("status", "serve", "stop", "url"):
         tailscale_subparsers.add_parser(name)
-    models_parser = subparsers.add_parser("models")
-    models_subparsers = models_parser.add_subparsers(dest="models_command")
-    models_subparsers.add_parser("list")
-    models_subparsers.add_parser("providers")
-    models_subparsers.add_parser("status")
-    models_subparsers.add_parser("current")
-    models_subparsers.add_parser("refresh")
-    models_subparsers.add_parser("auth-status")
-    models_set_default = models_subparsers.add_parser("set-default")
-    models_set_default.add_argument("model_ref")
-    models_set_fallback = models_subparsers.add_parser("set-fallback")
-    models_set_fallback.add_argument("model_ref")
-    models_enable_provider = models_subparsers.add_parser("enable-provider")
-    models_enable_provider.add_argument("provider")
-    models_disable_provider = models_subparsers.add_parser("disable-provider")
-    models_disable_provider.add_argument("provider")
-    models_base_url = models_subparsers.add_parser("set-provider-base-url")
-    models_base_url.add_argument("provider")
-    models_base_url.add_argument("url")
-    models_set = models_subparsers.add_parser("set")
-    models_set.add_argument("model_ref")
-    models_test = models_subparsers.add_parser("test")
-    models_test.add_argument("model_ref")
+    for models_command_name in ("models", "model"):
+        models_parser = subparsers.add_parser(models_command_name)
+        models_subparsers = models_parser.add_subparsers(dest="models_command")
+        models_list = models_subparsers.add_parser("list")
+        models_list.add_argument("--provider", default=None)
+        models_subparsers.add_parser("providers")
+        models_subparsers.add_parser("status")
+        models_subparsers.add_parser("current")
+        models_refresh = models_subparsers.add_parser("refresh")
+        models_refresh.add_argument("--provider", default=None)
+        models_subparsers.add_parser("auth-status")
+        models_set_default = models_subparsers.add_parser("set-default")
+        models_set_default.add_argument("model_ref")
+        models_set_fallback = models_subparsers.add_parser("set-fallback")
+        models_set_fallback.add_argument("model_ref")
+        models_enable_provider = models_subparsers.add_parser("enable-provider")
+        models_enable_provider.add_argument("provider")
+        models_disable_provider = models_subparsers.add_parser("disable-provider")
+        models_disable_provider.add_argument("provider")
+        models_base_url = models_subparsers.add_parser("set-provider-base-url")
+        models_base_url.add_argument("provider")
+        models_base_url.add_argument("url")
+        models_set = models_subparsers.add_parser("set")
+        models_set.add_argument("model_ref")
+        models_use = models_subparsers.add_parser("use")
+        models_use.add_argument("model_ref")
+        models_test = models_subparsers.add_parser("test")
+        models_test.add_argument("model_ref", nargs="?")
+    for providers_command_name in ("providers", "provider"):
+        providers_parser = subparsers.add_parser(providers_command_name)
+        providers_subparsers = providers_parser.add_subparsers(dest="providers_command")
+        providers_subparsers.add_parser("list")
+        providers_show = providers_subparsers.add_parser("show")
+        providers_show.add_argument("provider")
+        providers_add = providers_subparsers.add_parser("add")
+        providers_add.add_argument("name")
+        providers_add.add_argument("--type", required=True, dest="provider_type")
+        providers_add.add_argument("--base-url", default=None)
+        providers_add.add_argument("--api-key-env", default=None)
+        providers_add.add_argument("--default-model", default=None)
+        providers_remove = providers_subparsers.add_parser("remove")
+        providers_remove.add_argument("provider")
+        providers_enable = providers_subparsers.add_parser("enable")
+        providers_enable.add_argument("provider")
+        providers_disable = providers_subparsers.add_parser("disable")
+        providers_disable.add_argument("provider")
+        providers_use = providers_subparsers.add_parser("use")
+        providers_use.add_argument("provider")
+        providers_test = providers_subparsers.add_parser("test")
+        providers_test.add_argument("provider")
+        providers_subparsers.add_parser("doctor")
     jobs_parser = subparsers.add_parser("jobs")
     jobs_subparsers = jobs_parser.add_subparsers(dest="jobs_command")
     jobs_subparsers.add_parser("list")
@@ -553,6 +581,9 @@ def _dispatch_cli_command(args: argparse.Namespace) -> int:
         "workspace": workspace_command,
         "mobile": mobile_command,
         "models": models_command,
+        "model": models_command,
+        "providers": providers_command,
+        "provider": providers_command,
         "jobs": jobs_command,
         "runs": runs_command,
         "rollback": rollback_command,
@@ -971,7 +1002,7 @@ def _print_tailscale_result(result) -> int:
     return 0 if result.ok else 1
 
 
-def models_command(args: argparse.Namespace) -> int:
+def _legacy_models_command(args: argparse.Namespace) -> int:
     from .config import OmegaConfig
     from .runtime.model_selector import ModelSelector
 
@@ -1035,6 +1066,227 @@ def models_command(args: argparse.Namespace) -> int:
         console.print(f"Catalogue rafraîchi: {result['count']} modèles")
         return 0
     console.print("Commandes: omega models list|providers|status|current|set <provider/model>|test <provider/model>|refresh|auth-status")
+    return 2
+
+
+def models_command(args: argparse.Namespace) -> int:
+    from .config import OmegaConfig
+    from .providers.settings import set_default_provider, set_provider_enabled
+    from .runtime.model_selector import ModelSelector
+
+    _load_legacy_dotenv_if_needed()
+    config = OmegaConfig.from_env()
+    selector = ModelSelector(config)
+    command = args.models_command
+    if command == "list":
+        models = selector.catalog_api()
+        provider_filter = getattr(args, "provider", None)
+        if provider_filter:
+            models = [model for model in models if model["provider_id"] == provider_filter]
+        for model in models:
+            marker = "available" if model["available"] else "unavailable"
+            console.print(
+                f"{model['model_ref']} ({marker}, {model['speed_tier']}/{model['cost_tier']}) "
+                f"- {model['display_name']}"
+            )
+        return 0
+    if command == "providers":
+        for provider in selector.providers_api():
+            console.print(
+                f"{provider['id']} ({provider['auth_type']}) "
+                f"{provider['status']} - {provider['name']}"
+            )
+        return 0
+    if command in {"status", "auth-status"}:
+        for status in selector.status_api(force=True):
+            console.print(
+                f"{status['provider_id']}: {status['status']} ({status['auth_method']})"
+            )
+        return 0
+    if command == "current":
+        current = selector.current_api()
+        console.print(f"Default provider: {current['default_provider']}")
+        console.print(f"Default model: {current['primary_model_ref']}")
+        console.print(f"Source: {current['source_scope']}")
+        if current.get("fallback_model_ref"):
+            console.print(f"Fallback: {current['fallback_model_ref']}")
+        return 0
+    if command in {"set", "use", "set-default"}:
+        provider_id = args.model_ref.split("/", 1)[0]
+        try:
+            set_default_provider(provider_id, file_path=config.config_path)
+            preference = selector.set_preference("global", args.model_ref)
+        except ValueError as exc:
+            console.print(f"[red]{exc}[/red]")
+            return 1
+        console.print(f"Default provider: {provider_id}")
+        console.print(f"Default model: {preference.primary_model_ref}")
+        return 0
+    if command == "set-fallback":
+        preference = selector.set_preference(
+            "global",
+            config.default_model_ref,
+            fallback_model_ref=args.model_ref,
+        )
+        console.print(f"Fallback model: {preference.fallback_model_ref}")
+        return 0
+    if command == "enable-provider":
+        set_provider_enabled(args.provider, True, file_path=config.config_path)
+        console.print(f"Provider active: {args.provider}")
+        return 0
+    if command == "disable-provider":
+        set_provider_enabled(args.provider, False, file_path=config.config_path)
+        console.print(f"Provider desactive: {args.provider}")
+        return 0
+    if command == "set-provider-base-url":
+        _set_provider_base_url(args.provider, args.url)
+        console.print(f"Base URL {args.provider}: {args.url}")
+        return 0
+    if command == "test":
+        model_ref = (
+            getattr(args, "model_ref", None)
+            or selector.current_api()["primary_model_ref"]
+        )
+        provider_id = model_ref.split("/", 1)[0]
+        provider = selector.provider(provider_id)
+        if provider is None:
+            console.print("[red]Provider inconnu.[/red]")
+            return 1
+        result = provider.test_connection()
+        console.print(f"{model_ref}: {result.status} - {result.message}")
+        return 0 if result.ok else 1
+    if command == "refresh":
+        result = selector.refresh_catalog(getattr(args, "provider", None))
+        console.print(f"Catalogue rafraîchi: {result['count']} modèles")
+        for error in result.get("errors", []):
+            console.print(f"[yellow]{error['provider_id']}: {error['error']}[/yellow]")
+        return 0 if not result.get("errors") else 1
+    console.print(
+        "Commandes: omega models list|current|use <provider/model>|"
+        "test [provider/model]|refresh"
+    )
+    return 2
+
+
+def providers_command(args: argparse.Namespace) -> int:
+    from rich.table import Table
+
+    from .config import OmegaConfig
+    from .providers.settings import (
+        add_provider,
+        remove_provider,
+        set_default_provider,
+        set_provider_enabled,
+    )
+    from .runtime.model_selector import ModelSelector
+
+    _load_legacy_dotenv_if_needed()
+    config = OmegaConfig.from_env()
+    selector = ModelSelector(config)
+    command = args.providers_command
+    if command == "list":
+        table = Table("name", "type", "enabled", "auth", "default model", "status")
+        for provider in selector.providers_api():
+            table.add_row(
+                provider["id"],
+                provider.get("provider_type") or provider["id"],
+                "yes" if provider["enabled"] else "no",
+                provider["auth_type"],
+                provider.get("default_model") or "-",
+                provider["status"],
+            )
+        console.print(table)
+        return 0
+    if command == "show":
+        provider = selector.provider(args.provider)
+        if provider is None:
+            console.print(f"[red]Provider introuvable : {args.provider}[/red]")
+            return 1
+        info = provider.info().as_api()
+        for key in (
+            "id",
+            "name",
+            "provider_type",
+            "enabled",
+            "auth_type",
+            "base_url",
+            "default_model",
+            "capabilities",
+        ):
+            console.print(f"{key}: {info.get(key)}")
+        if provider.api_key_env:
+            console.print(f"api_key_env: {provider.api_key_env}")
+        return 0
+    if command == "add":
+        try:
+            item = add_provider(
+                args.name,
+                provider_type=args.provider_type,
+                base_url=args.base_url,
+                api_key_env=args.api_key_env,
+                default_model=args.default_model,
+                file_path=config.config_path,
+            )
+        except ValueError as exc:
+            console.print(f"[red]{exc}[/red]")
+            return 1
+        console.print(f"Provider configuré: {args.name} ({item['type']})")
+        return 0
+    if command == "remove":
+        try:
+            remove_provider(args.provider, file_path=config.config_path)
+        except ValueError as exc:
+            console.print(f"[red]{exc}[/red]")
+            return 1
+        console.print(f"Provider supprimé: {args.provider}")
+        return 0
+    if command in {"enable", "disable"}:
+        enabled = command == "enable"
+        try:
+            set_provider_enabled(
+                args.provider,
+                enabled,
+                file_path=config.config_path,
+            )
+        except ValueError as exc:
+            console.print(f"[red]{exc}[/red]")
+            return 1
+        console.print(
+            f"Provider {'activé' if enabled else 'désactivé'}: {args.provider}"
+        )
+        return 0
+    if command == "use":
+        try:
+            set_default_provider(args.provider, file_path=config.config_path)
+        except ValueError as exc:
+            console.print(f"[red]{exc}[/red]")
+            return 1
+        console.print(f"Default provider: {args.provider}")
+        return 0
+    if command == "test":
+        provider = selector.provider(args.provider)
+        if provider is None:
+            console.print(f"[red]Provider introuvable : {args.provider}[/red]")
+            return 1
+        result = provider.test_connection()
+        console.print(f"{args.provider}: {result.status} - {result.message}")
+        return 0 if result.ok else 1
+    if command == "doctor":
+        failed = False
+        for provider in selector.providers.list():
+            if not provider.enabled:
+                console.print(f"{provider.provider_id}: disabled")
+                continue
+            result = provider.test_connection()
+            console.print(
+                f"{provider.provider_id}: {result.status} - {result.message}"
+            )
+            failed = failed or not result.ok
+        return 1 if failed else 0
+    console.print(
+        "Commandes: omega providers list|show|add|remove|enable|disable|"
+        "use|test|doctor"
+    )
     return 2
 
 

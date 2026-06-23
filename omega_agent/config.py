@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from omega_agent.config_store import config_path as user_config_path
 from omega_agent.config_store import get_config_value, legacy_env_values, load_config
+from omega_agent.providers.catalog import BUILTIN_PROVIDER_NAMES
 
-VALID_PROVIDERS = {"codex", "openai", "openai_api", "openrouter", "ollama", "anthropic", "gemini", "custom_openai_compatible"}
+VALID_PROVIDERS = set(BUILTIN_PROVIDER_NAMES)
 
 
 @dataclass(frozen=True)
@@ -203,14 +205,24 @@ class OmegaConfig:
     @classmethod
     def from_env(cls) -> "OmegaConfig":
         source = _ConfigSources()
-        provider = source.get("OMEGA_PROVIDER", "codex").strip().lower()
-        if provider not in VALID_PROVIDERS:
+        provider = source.get("OMEGA_PROVIDER", "codex", "providers.default").strip().lower()
+        if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", provider):
+            raise ValueError(f"OMEGA_PROVIDER invalide: {provider}")
+        configured_items = source.config.get("providers", {}).get("items", {})
+        if provider not in VALID_PROVIDERS and provider not in configured_items:
             raise ValueError(f"OMEGA_PROVIDER invalide: {provider}")
 
         legacy_model = source.get("OMEGA_MODEL", "gpt-5.5").strip() or "gpt-5.5"
-        default_model_ref = source.get("OMEGA_DEFAULT_MODEL", "", "model.default").strip() or _legacy_model_ref(provider, legacy_model)
+        default_model_ref = (
+            source.get("OMEGA_DEFAULT_MODEL", "", "models.default").strip()
+            or source.get("OMEGA_DEFAULT_MODEL", "", "model.default").strip()
+            or _legacy_model_ref(provider, legacy_model)
+        )
         selected_provider, selected_model = _split_model_ref(default_model_ref, provider, legacy_model)
-        fallback_model_ref = source.get("OMEGA_FALLBACK_MODEL", "", "model.fallback").strip()
+        fallback_model_ref = (
+            source.get("OMEGA_FALLBACK_MODEL", "", "models.fallback").strip()
+            or source.get("OMEGA_FALLBACK_MODEL", "", "model.fallback").strip()
+        )
         model_selection_enabled = _parse_bool(source.get("OMEGA_MODEL_SELECTION_ENABLED", "true", "model.selection_enabled"))
         model_auth_cache_seconds = _parse_nonnegative_int(source.get("OMEGA_MODEL_AUTH_CACHE_SECONDS", "300", "model.auth_cache_seconds"), 300)
         model_status_cache_seconds = _parse_nonnegative_int(source.get("OMEGA_MODEL_STATUS_CACHE_SECONDS", "60", "model.status_cache_seconds"), 60)
@@ -396,7 +408,7 @@ class OmegaConfig:
             custom_openai_model=os.getenv("CUSTOM_OPENAI_MODEL", "").strip(),
             config_path=source.config_file,
             config_status=source.config_status,
-            model_config_source=source.source_for("model.default"),
+            model_config_source=source.source_for("models.default"),
             legacy_env_present=source.legacy_env_present,
         )
         cfg.ensure_dirs()
@@ -501,7 +513,7 @@ def _parse_codex_approval_policy(value: str) -> str:
 
 def _legacy_model_ref(provider: str, model: str) -> str:
     model = model.strip() or "gpt-5.5"
-    if "/" in model and model.split("/", 1)[0] in VALID_PROVIDERS:
+    if "/" in model:
         return model
     provider_id = "openai_api" if provider == "openai" else provider
     return f"{provider_id}/{model}"

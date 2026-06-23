@@ -140,7 +140,12 @@ class BudgetEnforcer:
         if isinstance(context, dict):
             context = self.context(**context)
         if not self.config.governance_budgets_enabled or not self.config.governance_budgets_enforce:
-            return BudgetDecision("allow", f"Budget enforcement disabled for {metric}.", metric=metric, risk_level=risk_level)
+            return BudgetDecision(
+                "allow",
+                f"Budget enforcement disabled for {metric}.",
+                metric=metric,
+                risk_level="low",
+            )
         effective = self.get_effective_budget(context)
         return self.tracker.record(context, metric, increment, effective, metadata=metadata)
 

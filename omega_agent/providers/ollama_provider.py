@@ -1,37 +1,98 @@
 from __future__ import annotations
 
-import urllib.error
-import urllib.request
-
-from omega_agent.providers.base import AuthStatus, BaseProvider, CompletionResult, ModelInfo, ProviderError, ProviderInfo
+from omega_agent.providers.base import (
+    BaseProvider,
+    CompletionResult,
+    ModelInfo,
+    ProviderCapabilities,
+    ProviderError,
+    ProviderTestResult,
+    model_name_from_ref,
+)
 
 
 class OllamaProvider(BaseProvider):
     id = "ollama"
-    name = "Ollama"
+    name = "Ollama local"
+    provider_type = "ollama"
     auth_type = "none"
+    default_base_url = "http://127.0.0.1:11434"
+    default_model = "llama3.1"
+    description = "Serveur de modèles local Ollama."
+    capabilities = ProviderCapabilities(
+        chat=True,
+        streaming=True,
+        tool_calling=False,
+        vision=True,
+        json_mode=True,
+        reasoning=True,
+        local=True,
+        remote=False,
+    )
 
-    def info(self) -> ProviderInfo:
-        return ProviderInfo(
-            id=self.id,
-            name=self.name,
-            description="Provider local Ollama.",
-            auth_type=self.auth_type,
-            supports_streaming=True,
-            supports_local=True,
-            docs_url="https://ollama.com",
-            config_schema={"env": ["OLLAMA_BASE_URL"]},
+    def discover_models(self) -> list[ModelInfo]:
+        payload = self._request_json("GET", f"{self.base_url}/api/tags", timeout=5)
+        rows = payload.get("models")
+        if not isinstance(rows, list):
+            return self.list_models()
+        models = [
+            self._model_info(str(row.get("name")), discovered=True)
+            for row in rows
+            if isinstance(row, dict) and row.get("name")
+        ]
+        return models or self.list_models()
+
+    def test_connection(self) -> ProviderTestResult:
+        try:
+            models = self.discover_models()
+        except ProviderError as exc:
+            return ProviderTestResult(
+                self.provider_id,
+                False,
+                "unavailable",
+                str(exc),
+            )
+        return ProviderTestResult(
+            self.provider_id,
+            True,
+            "available",
+            "Ollama accessible.",
+            {"models_discovered": len(models)},
         )
 
-    def list_models(self) -> list[ModelInfo]:
-        return [ModelInfo("ollama-llama3.3", self.id, "ollama/llama3.3", "llama3.3", supports_streaming=True, supports_local=True, available=True, speed_tier="balanced", cost_tier="free")]
+    def chat(
+        self,
+        model_ref: str,
+        history: list[dict[str, str]],
+        user_input: str,
+        *,
+        tools: list[dict] | None = None,
+    ) -> CompletionResult:
+        messages = [dict(item) for item in history]
+        messages.append({"role": "user", "content": user_input})
+        payload = self._request_json(
+            "POST",
+            f"{self.base_url}/api/chat",
+            payload={
+                "model": model_name_from_ref(self.provider_id, model_ref),
+                "messages": messages,
+                "stream": False,
+            },
+            timeout=60,
+        )
+        message = payload.get("message")
+        content = message.get("content") if isinstance(message, dict) else None
+        if not isinstance(content, str):
+            raise ProviderError(f"{self.provider_id}: réponse sans contenu texte.")
+        return CompletionResult(
+            content,
+            input_tokens=_int_or_none(payload.get("prompt_eval_count")),
+            output_tokens=_int_or_none(payload.get("eval_count")),
+        )
 
-    def check_auth(self) -> AuthStatus:
-        try:
-            with urllib.request.urlopen(f"{self.config.ollama_base_url.rstrip('/')}/api/tags", timeout=1.5):
-                return AuthStatus(self.id, "configured", self.auth_type, {"reachable": True, "local": True})
-        except (OSError, urllib.error.URLError, TimeoutError):
-            return AuthStatus(self.id, "missing", self.auth_type, {"reachable": False, "local": True})
 
-    def complete(self, model_ref: str, history: list[dict[str, str]], user_input: str) -> CompletionResult:
-        raise ProviderError("Ollama complete n'est pas encore active dans ce build.")
+def _int_or_none(value: object) -> int | None:
+    try:
+        return int(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None

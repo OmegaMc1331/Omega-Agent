@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from omega_agent.config import OmegaConfig
-from omega_agent.config_store import get_config_value, load_config, save_config, set_config_value
+from omega_agent.config_store import load_config, save_config, set_config_value
 from omega_agent.providers.base import AuthStatus, ModelInfo, ProviderInfo
 from omega_agent.providers.registry import ProviderRegistry
 from omega_agent.runtime.storage import connect_runtime_db
@@ -59,10 +59,17 @@ class ModelSelector:
                 info = provider.info()
                 conn.execute(
                     """
-                    INSERT OR IGNORE INTO model_providers(id, name, description, auth_type, enabled, status, config_json, created_at, updated_at)
+                    INSERT INTO model_providers(id, name, description, auth_type, enabled, status, config_json, created_at, updated_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(id) DO UPDATE SET
+                        name=excluded.name,
+                        description=excluded.description,
+                        auth_type=excluded.auth_type,
+                        enabled=excluded.enabled,
+                        config_json=excluded.config_json,
+                        updated_at=excluded.updated_at
                     """,
-                    (info.id, info.name, info.description, info.auth_type, int(self._provider_enabled(info.id, info.enabled)), info.status, json.dumps(info.config_schema), now, now),
+                    (info.id, info.name, info.description, info.auth_type, int(info.enabled), info.status, json.dumps(info.config_schema), now, now),
                 )
                 for model in provider.list_models():
                     self._upsert_model(conn, model, now)
@@ -139,24 +146,15 @@ class ModelSelector:
 
     def providers_api(self) -> list[dict]:
         statuses = {item["provider_id"]: item for item in self.status_api()}
-        rows = []
-        with connect_runtime_db(self.config) as conn:
-            providers = conn.execute("SELECT * FROM model_providers ORDER BY id").fetchall()
-        for row in providers:
-            provider = self.providers.get(row["id"])
-            info = provider.info().as_api() if provider else {}
-            payload = {
-                **info,
-                "id": row["id"],
-                "name": row["name"],
-                "description": row["description"],
-                "auth_type": row["auth_type"],
-                "enabled": self._provider_enabled(row["id"], bool(row["enabled"])),
-                "status": statuses.get(row["id"], {}).get("status", row["status"]),
-                "config_schema": json.loads(row["config_json"] or "{}"),
-            }
-            rows.append(redact(payload))
-        return rows
+        return [
+            redact(
+                {
+                    **provider.info().as_api(),
+                    "status": statuses.get(provider.provider_id, {}).get("status", "unknown"),
+                }
+            )
+            for provider in self.providers.list()
+        ]
 
     def catalog_api(self) -> list[dict]:
         with connect_runtime_db(self.config) as conn:
@@ -238,8 +236,11 @@ class ModelSelector:
         if fallback_model_ref:
             self._validate_model_ref(fallback_model_ref)
         if scope == "global" and scope_id is None and self.config.config_path is not None:
-            data = set_config_value("model.default", primary_model_ref, file_path=self.config.config_path)
-            data = set_config_value("model.fallback", fallback_model_ref or None, data)
+            data = set_config_value("models.default", primary_model_ref, file_path=self.config.config_path)
+            data = set_config_value("models.fallback", fallback_model_ref or None, data)
+            recent = list(data.get("models", {}).get("recent") or [])
+            recent = [primary_model_ref, *[item for item in recent if item != primary_model_ref]][:10]
+            data = set_config_value("models.recent", recent, data)
             save_config(data, self.config.config_path)
         now = _now()
         with connect_runtime_db(self.config) as conn:
@@ -283,7 +284,13 @@ class ModelSelector:
         return ResolvedModel(primary, fallback, provider_id, model_name, scope, scope_id)
 
     def current_api(self, session_id: str | None = None, project_id: str | None = None, agent_profile_id: str | None = None) -> dict:
-        return self.resolve_model(session_id=session_id, project_id=project_id, agent_profile_id=agent_profile_id).as_api()
+        payload = self.resolve_model(
+            session_id=session_id,
+            project_id=project_id,
+            agent_profile_id=agent_profile_id,
+        ).as_api()
+        payload["default_provider"] = self._default_provider()
+        return payload
 
     def status_api(self, force: bool = False) -> list[dict]:
         now = time.monotonic()
@@ -316,25 +323,31 @@ class ModelSelector:
         now = _now()
         providers = [self.providers.get(provider_id)] if provider_id else self.providers.list()
         count = 0
+        errors: list[dict[str, str]] = []
         with connect_runtime_db(self.config) as conn:
             for provider in providers:
                 if provider is None:
+                    if provider_id:
+                        errors.append({"provider_id": provider_id, "error": "Provider introuvable."})
                     continue
-                for model in provider.list_models():
+                try:
+                    models = provider.discover_models()
+                except Exception as exc:
+                    errors.append({"provider_id": provider.provider_id, "error": str(redact(str(exc)))})
+                    models = provider.list_models()
+                for model in models:
                     self._upsert_model(conn, model, now)
                     count += 1
-        return {"count": count}
+        return {"count": count, "errors": errors}
 
     def provider(self, provider_id: str):
         return self.providers.get(provider_id)
 
-    def _provider_enabled(self, provider_id: str, default: bool = True) -> bool:
+    def _default_provider(self) -> str:
         if self.config.config_path is None or not self.config.config_path.exists():
-            return default
-        try:
-            return bool(get_config_value(f"providers.{provider_id}.enabled", load_config(self.config.config_path)))
-        except KeyError:
-            return default
+            return self.config.provider
+        data = load_config(self.config.config_path)
+        return str(data.get("providers", {}).get("default") or self.config.provider)
 
     def record_usage_start(self, session_id: str | None, model_ref: str) -> str:
         provider_id, _ = split_model_ref(model_ref)
@@ -376,7 +389,7 @@ class ModelSelector:
 def split_model_ref(model_ref: str) -> tuple[str, str]:
     parts = [part for part in str(model_ref or "").split("/") if part]
     if len(parts) < 2:
-        return "codex", "gpt-5.5"
+        raise ValueError("Référence modèle invalide. Format attendu : provider/model.")
     return parts[0], "/".join(parts[1:])
 
 

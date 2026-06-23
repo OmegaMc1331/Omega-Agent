@@ -289,9 +289,10 @@ Clés principales :
 | `workspace.allow_git_write` | Autorise les opérations Git locales en écriture |
 | `codex.sandbox_mode` | Sandbox demandé au backend Codex |
 | `codex.approval_policy` | Politique d’approval demandée au backend Codex |
-| `model.default` | Référence du modèle par défaut, au format `provider/model` |
-| `model.fallback` | Référence de fallback optionnelle |
-| `providers.*` | Activation, auth déclarative, URL et catalogue des providers |
+| `providers.default` | Provider sélectionné par défaut |
+| `providers.items.*` | Type, activation, URL, référence de secret et modèle manuel des providers |
+| `models.default` | Référence du modèle par défaut, au format `provider/model` |
+| `models.fallback` | Référence de fallback optionnelle |
 | `paths.db_path` | Chemin de la base SQLite |
 | `gateway.host` | Adresse d’écoute du Gateway |
 | `gateway.port` | Port d’écoute du Gateway |
@@ -312,7 +313,10 @@ Exemple minimal :
     "sandbox_mode": "workspace-write",
     "approval_policy": "never"
   },
-  "model": {
+  "providers": {
+    "default": "codex"
+  },
+  "models": {
     "default": "codex/gpt-5.5",
     "fallback": null
   },
@@ -389,6 +393,10 @@ omega budgets simulate --tool write_file --risk high --category reversible_write
 ### Modèles, extensions et automatisation
 
 ```powershell
+omega providers list
+omega providers doctor
+omega models list
+omega models current
 omega models status
 omega models providers
 omega capabilities list
@@ -500,33 +508,79 @@ Le Gateway écoute sur loopback par défaut. Un bind LAN doit être explicite et
 
 Les actions, événements, traces, métriques et réponses d’API passent par les fonctions de redaction. Les secrets bruts, headers d’autorisation, cookies et fichiers d’authentification ne doivent pas apparaître dans Omega Control ou SQLite.
 
-## Providers IA
+## Providers et modèles
 
-Omega Agent conserve son identité, ses policies, son runtime et ses tools quel que soit le provider sélectionné.
+Omega Agent conserve son identité, ses policies, son runtime et ses tools quel que soit le provider sélectionné. Codex CLI/OAuth est un provider disponible parmi d’autres.
 
-Le registre actuel contient :
+### Afficher et sélectionner un provider
 
-| Provider | État dans ce build |
-|---|---|
-| Codex CLI/OAuth | Chemin d’exécution `complete()` actif |
-| OpenAI API | Catalogue, configuration et statut d’auth présents ; complétion directe non active |
-| OpenRouter | Catalogue, configuration et statut d’auth présents ; complétion directe non active |
-| Ollama | Détection locale et catalogue présents ; complétion directe non active |
-| Anthropic | Catalogue, configuration et statut d’auth présents ; complétion directe non active |
-| Gemini | Catalogue, configuration et statut d’auth présents ; complétion directe non active |
-| Custom OpenAI-compatible | Configuration et catalogue présents ; complétion directe non active |
+```powershell
+omega providers list
+omega providers show codex
+omega providers use codex
+omega providers doctor
+```
 
-Codex peut servir de backend technique via son CLI et son OAuth. Omega lui transmet le workspace, le sandbox et la politique d’approval configurés, puis conserve la gouvernance applicative côté Omega.
+La configuration réside dans `$HOME\.omega\config.json`. `providers.default` sélectionne le provider et `models.default` sélectionne le modèle global.
 
-Configuration courante pour un workspace en écriture :
+### Ajouter un endpoint OpenAI-compatible
+
+Déclarez le nom de la variable d’environnement, jamais sa valeur :
+
+```powershell
+omega providers add openrouter `
+  --type openai-compatible `
+  --base-url https://openrouter.ai/api/v1 `
+  --api-key-env OPENROUTER_API_KEY `
+  --default-model openai/gpt-oss-120b
+
+omega providers use openrouter
+omega models use openrouter/openai/gpt-oss-120b
+omega providers test openrouter
+```
+
+Définissez ensuite la clé dans l’environnement utilisateur Windows. Omega stocke uniquement `api_key_env` dans `config.json` et masque les headers d’autorisation dans les erreurs et les réponses d’API.
+
+### Utiliser Ollama local
+
+```powershell
+omega providers add local-ollama `
+  --type ollama `
+  --base-url http://localhost:11434 `
+  --default-model llama3.1
+
+omega providers use local-ollama
+omega models use local-ollama/llama3.1
+omega providers test local-ollama
+```
+
+Ollama et LM Studio n’exigent pas de clé par défaut. Le service local doit toutefois être démarré pour réussir le test de connexion.
+
+### Gérer les modèles
+
+```powershell
+omega models list
+omega models list --provider openrouter
+omega models refresh --provider openrouter
+omega models current
+omega models test
+omega models test openrouter/openai/gpt-oss-120b
+```
+
+La découverte de modèles utilise `/models` pour les endpoints OpenAI-compatible et `/api/tags` pour Ollama. Si la découverte échoue, Omega conserve les modèles configurés manuellement.
+
+### Providers intégrés
+
+Le registre fournit des configurations pour Codex, OpenAI, Anthropic, Google Gemini, Vertex AI, OpenRouter, Groq, Mistral, Ollama, LM Studio, DeepSeek, xAI et les endpoints OpenAI-compatible personnalisés.
+
+Les capacités varient selon le provider et le modèle. Un adapter peut annoncer le chat, le streaming, le tool calling, la vision, le mode JSON ou le reasoning. Quand le tool calling natif n’est pas disponible, Omega conserve son format d’actions structurées interne.
+
+Pour Codex CLI/OAuth, les réglages de sandbox restent distincts :
 
 ```powershell
 omega config set codex.sandbox_mode workspace-write
 omega config set codex.approval_policy never
-omega models status
 ```
-
-Utilisez `never` uniquement pour le mode non interactif prévu par Omega et lorsque les policies Omega autorisent déjà l’action. Si `workspace.full_access=false`, préférez une configuration avec approval.
 
 ## Développement
 
