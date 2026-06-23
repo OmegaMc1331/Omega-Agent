@@ -13,6 +13,7 @@ from omega_agent.providers.base import (
     ProviderTestResult,
     model_name_from_ref,
 )
+from omega_agent.providers.thinking import deep_merge_payload
 
 
 class OpenAICompatibleProvider(BaseProvider):
@@ -62,6 +63,7 @@ class OpenAICompatibleProvider(BaseProvider):
         user_input: str,
         *,
         tools: list[dict] | None = None,
+        thinking: dict[str, Any] | None = None,
     ) -> CompletionResult:
         self._require_auth()
         model = model_name_from_ref(self.provider_id, model_ref)
@@ -74,6 +76,8 @@ class OpenAICompatibleProvider(BaseProvider):
         }
         if tools and self.capabilities.tool_calling:
             request_payload["tools"] = tools
+        if thinking:
+            deep_merge_payload(request_payload, thinking)
         payload = self._request_json(
             "POST",
             f"{self.base_url}/chat/completions",

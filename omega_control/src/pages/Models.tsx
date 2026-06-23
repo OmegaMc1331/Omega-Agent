@@ -54,6 +54,7 @@ export function ModelsPage({
   onRefresh,
   onTestProvider,
   onToggleProvider,
+  onSetThinking,
 }: {
   providers: ProviderView[];
   models: ModelView[];
@@ -70,6 +71,7 @@ export function ModelsPage({
   onRefresh: () => void;
   onTestProvider: (providerId: string) => void;
   onToggleProvider: (providerId: string, enabled: boolean) => void;
+  onSetThinking: (level: string, modelRef: string) => void;
 }) {
   const [tab, setTab] = useState<ModelsTab>('Overview');
   const [query, setQuery] = useState('');
@@ -125,6 +127,25 @@ export function ModelsPage({
             </div>
             <div className="mt-5">
               <ModelSelector current={current} models={models} providers={providers} onSelect={onSelectSession} onSetDefault={onSetDefault} />
+            </div>
+            <div className="mt-4 rounded-2xl border border-white/10 bg-black/10 p-3">
+              <label className="text-xs font-medium text-zinc-400" htmlFor="thinking-level">Thinking level</label>
+              <select
+                id="thinking-level"
+                value={current?.thinking?.current_level || 'off'}
+                disabled={!current?.thinking?.supported}
+                onChange={(event) => current && onSetThinking(event.target.value, current.primary_model_ref)}
+                className="field mt-2 h-10 w-full py-1 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {!current?.thinking?.supported && <option value="off">Unsupported</option>}
+                {current?.thinking?.levels.map((level) => (
+                  <option key={level} value={level}>{level === 'auto' ? 'Auto' : level}</option>
+                ))}
+              </select>
+              <p className="mt-2 text-xs leading-5 text-zinc-500">
+                Contrôle l'effort de raisonnement quand le provider le supporte. N'affiche pas la chaîne de pensée.
+              </p>
+              {current?.thinking?.reason && <p className="mt-1 text-xs text-amber-200/80">{current.thinking.reason}</p>}
             </div>
           </section>
           <section className="rounded-3xl border border-white/10 bg-white/[0.035] p-5">

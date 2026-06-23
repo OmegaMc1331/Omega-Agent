@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from omega_agent.providers.base import (
     BaseProvider,
     CompletionResult,
@@ -9,6 +11,7 @@ from omega_agent.providers.base import (
     ProviderTestResult,
     model_name_from_ref,
 )
+from omega_agent.providers.thinking import deep_merge_payload
 
 
 class OllamaProvider(BaseProvider):
@@ -67,17 +70,21 @@ class OllamaProvider(BaseProvider):
         user_input: str,
         *,
         tools: list[dict] | None = None,
+        thinking: dict[str, Any] | None = None,
     ) -> CompletionResult:
         messages = [dict(item) for item in history]
         messages.append({"role": "user", "content": user_input})
+        request_payload = {
+            "model": model_name_from_ref(self.provider_id, model_ref),
+            "messages": messages,
+            "stream": False,
+        }
+        if thinking:
+            deep_merge_payload(request_payload, thinking)
         payload = self._request_json(
             "POST",
             f"{self.base_url}/api/chat",
-            payload={
-                "model": model_name_from_ref(self.provider_id, model_ref),
-                "messages": messages,
-                "stream": False,
-            },
+            payload=request_payload,
             timeout=60,
         )
         message = payload.get("message")

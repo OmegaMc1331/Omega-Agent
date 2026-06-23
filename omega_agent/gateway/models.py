@@ -18,6 +18,7 @@ ReasoningVisibility = Literal["public", "internal", "redacted"]
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=20000)
     session_id: str | None = Field(default=None, max_length=64)
+    thinking_level: str | None = Field(default=None, min_length=2, max_length=16)
 
 
 class SessionCreateRequest(BaseModel):

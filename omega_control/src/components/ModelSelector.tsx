@@ -11,6 +11,18 @@ export type CurrentModelView = {
   model_name: string;
   source_scope: string;
   source_scope_id?: string | null;
+  thinking?: {
+    supported: boolean;
+    levels: string[];
+    configured_level: string;
+    current_level: string;
+    source: string;
+    mode: string;
+    reason?: string;
+    limitations?: string[];
+    valid?: boolean;
+    error?: string;
+  };
 };
 
 export function ModelSelector({

@@ -437,7 +437,11 @@ def create_router() -> APIRouter:
             raise HTTPException(status_code=404, detail="Session introuvable.")
         try:
             runtime = state.runtime()
-            output = await runtime.send_message(message, session_id=session_id)
+            output = await runtime.send_message(
+                message,
+                session_id=session_id,
+                thinking_level=payload.thinking_level,
+            )
         except PermissionError as exc:
             raise HTTPException(status_code=403, detail=str(exc)) from exc
         if output == CODEX_LOGIN_HINT:

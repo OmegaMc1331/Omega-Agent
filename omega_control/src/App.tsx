@@ -651,6 +651,19 @@ export default function App() {
     }
   }
 
+  async function setThinkingLevel(level: string, modelRef: string) {
+    try {
+      await api('/api/models/thinking', {
+        method: 'POST',
+        body: JSON.stringify({ level, model_ref: modelRef }),
+      });
+      setCurrentModel(await api<CurrentModelView>(activeSession ? `/api/models/current?session_id=${encodeURIComponent(activeSession)}` : '/api/models/current'));
+      setError('');
+    } catch (nextError) {
+      setError(errorMessage(nextError));
+    }
+  }
+
   async function setModelPreference(scope: string, scopeId: string | null, primaryModelRef: string, fallbackModelRef?: string | null) {
     try {
       rememberModelRef(primaryModelRef, setRecentModelRefs);
@@ -947,7 +960,7 @@ export default function App() {
             {page === 'Timeline' && <TimelinePage />}
             {page === 'Rollback' && <RollbackPage />}
             {page === 'Sessions' && <SessionsView sessions={sessions} projects={projects} activeSession={activeSession} setActiveSession={setActiveSession} deleteSession={deleteSession} />}
-            {page === 'Models' && <ModelsPage providers={modelProviders} models={modelCatalog} preferences={modelPreferences} usage={modelUsage} modelEvents={logs.filter((event) => event.type === 'model.fallback' || event.type === 'model.error')} projects={projects} agents={agents} current={currentModel} loading={loadingPage} onSelectSession={selectSessionModel} onSetDefault={setDefaultModel} onSetPreference={setModelPreference} onRefresh={refreshModelCatalog} onTestProvider={testModelProvider} onToggleProvider={toggleModelProvider} />}
+            {page === 'Models' && <ModelsPage providers={modelProviders} models={modelCatalog} preferences={modelPreferences} usage={modelUsage} modelEvents={logs.filter((event) => event.type === 'model.fallback' || event.type === 'model.error')} projects={projects} agents={agents} current={currentModel} loading={loadingPage} onSelectSession={selectSessionModel} onSetDefault={setDefaultModel} onSetPreference={setModelPreference} onRefresh={refreshModelCatalog} onTestProvider={testModelProvider} onToggleProvider={toggleModelProvider} onSetThinking={setThinkingLevel} />}
             {page === 'Projects' && <ProjectsView projects={projects} sessions={sessions} draft={projectDraft} setDraft={setProjectDraft} createProject={createProject} loading={loadingPage} />}
             {page === 'Agents' && <AgentsView agents={agents} updateAgent={updateAgent} loading={loadingPage} />}
             {page === 'Delegations' && <DelegationsView delegations={delegations} loading={loadingPage} />}

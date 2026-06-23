@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 
 from omega_agent.providers.base import (
     BaseProvider,
@@ -63,6 +64,7 @@ class GoogleProvider(BaseProvider):
         user_input: str,
         *,
         tools: list[dict] | None = None,
+        thinking: dict[str, Any] | None = None,
     ) -> CompletionResult:
         if not self._api_key():
             raise ProviderAuthError(
@@ -85,6 +87,14 @@ class GoogleProvider(BaseProvider):
             )
         contents.append({"role": "user", "parts": [{"text": user_input}]})
         request_payload: dict = {"contents": contents}
+        if thinking:
+            thinking_config: dict[str, Any] = {}
+            if "thinking_budget" in thinking:
+                thinking_config["thinkingBudget"] = int(thinking["thinking_budget"])
+            if "thinking_level" in thinking:
+                thinking_config["thinkingLevel"] = str(thinking["thinking_level"])
+            if thinking_config:
+                request_payload.setdefault("generationConfig", {})["thinkingConfig"] = thinking_config
         if system_parts:
             request_payload["systemInstruction"] = {
                 "parts": [{"text": "\n\n".join(system_parts)}]

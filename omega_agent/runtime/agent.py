@@ -109,6 +109,7 @@ class OmegaRuntime:
         untrusted_input: bool = False,
         channel_type: str | None = None,
         reasoning_sink: ReasoningSink | None = None,
+        thinking_level: str | None = None,
     ) -> str:
         perf = self.performance_store.start(session_id, {"provider": self.config.provider}) if self.performance_store else None
         session_id = session_id or self.sessions.default_session_id()
@@ -270,6 +271,7 @@ class OmegaRuntime:
                             reasoning_sink,
                             perf,
                             run_id,
+                            thinking_level,
                         )
                     except Exception as primary_exc:
                         current = self.durable.get_run(run_id) if run_id else None
@@ -292,6 +294,7 @@ class OmegaRuntime:
                             reasoning_sink,
                             perf,
                             run_id,
+                            thinking_level,
                         )
                     actions = _extract_omega_actions(model_output)
                     if actions:
@@ -386,6 +389,7 @@ class OmegaRuntime:
         reasoning_sink: ReasoningSink | None,
         perf,
         run_id: str | None = None,
+        thinking_level: str | None = None,
     ) -> str:
         with perf.step("tools_loaded") if perf and self.tools_provider else nullcontext():
             tools = self.tools_provider() if self.tools_provider else None
@@ -403,6 +407,13 @@ class OmegaRuntime:
         provider = self.model_selector.provider(provider_id)
         if provider is None:
             raise ValueError(f"Provider modèle inconnu: {provider_id}")
+        from omega_agent.providers.thinking import matrix_for_config
+
+        resolved_thinking = matrix_for_config(active_config).resolve(
+            model_ref,
+            request_override=thinking_level,
+        )
+        thinking_parameters = resolved_thinking.api_parameters
         codex_history = [{"role": "system", "content": context["system_prompt"]}]
         codex_history.extend({"role": item.role, "content": item.content} for item in history)
         from omega_agent.governance.budget_enforcer import BudgetEnforcer
@@ -441,11 +452,11 @@ class OmegaRuntime:
             )
             if active_config.streaming and provider.supports_streaming():
                 chunks = []
+                stream_kwargs = {"tools": native_tools}
+                if thinking_parameters:
+                    stream_kwargs["thinking"] = thinking_parameters
                 async for chunk in provider.stream_chat(
-                    model_ref,
-                    codex_history,
-                    message,
-                    tools=native_tools,
+                    model_ref, codex_history, message, **stream_kwargs
                 ):
                     chunks.append(chunk)
                 output = "".join(chunks)
@@ -453,12 +464,15 @@ class OmegaRuntime:
 
                 result = CompletionResult(output)
             else:
+                chat_kwargs = {"tools": native_tools}
+                if thinking_parameters:
+                    chat_kwargs["thinking"] = thinking_parameters
                 result = await asyncio.to_thread(
                     provider.chat,
                     model_ref,
                     codex_history,
                     message,
-                    tools=native_tools,
+                    **chat_kwargs,
                 )
                 output = result.content
             if False and provider_id == "codex":

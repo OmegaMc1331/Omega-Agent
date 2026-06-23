@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 
 from omega_agent.providers.base import (
     BaseProvider,
@@ -10,6 +11,7 @@ from omega_agent.providers.base import (
     ProviderError,
     model_name_from_ref,
 )
+from omega_agent.providers.thinking import deep_merge_payload
 
 
 class AnthropicProvider(BaseProvider):
@@ -45,6 +47,7 @@ class AnthropicProvider(BaseProvider):
         user_input: str,
         *,
         tools: list[dict] | None = None,
+        thinking: dict[str, Any] | None = None,
     ) -> CompletionResult:
         if not self._api_key():
             raise ProviderAuthError(
@@ -66,6 +69,14 @@ class AnthropicProvider(BaseProvider):
             "max_tokens": int(self.settings.get("max_tokens") or 4096),
             "messages": messages,
         }
+        if thinking:
+            budget = thinking.get("thinking", {}).get("budget_tokens")
+            if budget is not None and int(budget) >= int(request_payload["max_tokens"]):
+                raise ProviderError(
+                    f"{self.provider_id}: budget_tokens doit être inférieur à max_tokens "
+                    f"({request_payload['max_tokens']})."
+                )
+            deep_merge_payload(request_payload, thinking)
         if system_parts:
             request_payload["system"] = "\n\n".join(system_parts)
         if tools:

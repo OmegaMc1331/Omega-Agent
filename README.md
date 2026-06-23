@@ -285,6 +285,9 @@ Clés principales :
 | `providers.items.*` | Type, activation, URL, référence de secret et modèle manuel des providers |
 | `models.default` | Référence du modèle par défaut, au format `provider/model` |
 | `models.fallback` | Référence de fallback optionnelle |
+| `thinking.default` | Niveau de raisonnement Omega par défaut |
+| `thinking.per_model` | Overrides validés par référence `provider/model` |
+| `thinking.allow_unsupported_fallback` | Garde-fou pour les profils non reconnus ; `false` par défaut |
 | `paths.db_path` | Chemin de la base SQLite |
 | `gateway.host` | Adresse d’écoute du Gateway |
 | `gateway.port` | Port d’écoute du Gateway |
@@ -311,6 +314,11 @@ Exemple minimal :
   "models": {
     "default": "codex/gpt-5.5",
     "fallback": null
+  },
+  "thinking": {
+    "default": "auto",
+    "per_model": {},
+    "allow_unsupported_fallback": false
   },
   "paths": {
     "db_path": "C:\\Users\\<vous>\\.omega\\omega.db"
@@ -391,6 +399,10 @@ omega models list
 omega models current
 omega models status
 omega models providers
+omega models show openai/gpt-5.5
+omega thinking current
+omega thinking levels
+omega thinking doctor
 omega capabilities list
 omega connectors list
 omega connectors auth-status
@@ -560,6 +572,27 @@ omega models test openrouter/openai/gpt-oss-120b
 ```
 
 La découverte de modèles utilise `/models` pour les endpoints OpenAI-compatible et `/api/tags` pour Ollama. Si la découverte échoue, Omega conserve les modèles configurés manuellement.
+
+### Thinking / reasoning levels
+
+Omega expose des niveaux simples, mais les valide contre le provider et le modèle sélectionnés. Il n’envoie aucun paramètre de raisonnement à un modèle inconnu ou non compatible.
+
+```powershell
+omega thinking current
+omega thinking levels
+omega thinking levels --model openai/gpt-5.5
+omega thinking use high
+omega thinking use medium --model openai/gpt-5.5
+omega thinking off
+omega thinking doctor
+omega models show openai/gpt-5.5
+```
+
+Les niveaux Omega possibles sont `off`, `auto`, `minimal`, `low`, `medium`, `high` et `max`, mais chaque profil n’en expose qu’un sous-ensemble. Par exemple, un modèle OpenAI compatible peut utiliser `reasoning.effort`, Gemini 2.5 un budget de thinking, Gemini 3 un niveau de thinking, et certains modèles Anthropic un budget ou un mode adaptatif.
+
+`auto` laisse Omega utiliser le mode dynamique du provider lorsqu’il existe, ou le défaut sûr du profil. Un niveau incompatible est refusé et n’est pas enregistré.
+
+Cette option contrôle uniquement l’effort demandé à l’API. Elle n’affiche jamais la chaîne de pensée, les raisonnements privés du provider ou des prompts internes. Les profils OpenAI-compatible personnalisés restent désactivés par défaut tant que leur mapping n’est pas déclaré explicitement dans `thinking.profiles`.
 
 ### Providers intégrés
 

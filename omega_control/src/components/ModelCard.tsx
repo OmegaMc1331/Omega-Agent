@@ -18,6 +18,15 @@ export type ModelView = {
   supports_json?: boolean;
   supports_reasoning?: boolean;
   supports_local?: boolean;
+  thinking?: CurrentModelThinking;
+};
+
+type CurrentModelThinking = {
+  supported: boolean;
+  levels: string[];
+  configured_level: string;
+  current_level: string;
+  mode: string;
 };
 
 export function ModelCard({ model, current, onSelect, onDefault }: { model: ModelView; current?: boolean; onSelect: (modelRef: string) => void; onDefault: (modelRef: string) => void }) {

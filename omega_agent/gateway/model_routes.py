@@ -27,6 +27,11 @@ class ModelTestRequest(BaseModel):
     prompt: str = Field(default="Réponds simplement: ok", max_length=2000)
 
 
+class ThinkingSelectRequest(BaseModel):
+    level: str = Field(min_length=2, max_length=16)
+    model_ref: str | None = Field(default=None, min_length=3, max_length=300)
+
+
 def create_model_router() -> APIRouter:
     router = APIRouter()
 
@@ -77,6 +82,26 @@ def create_model_router() -> APIRouter:
         result = request.app.state.gateway_state.model_selector.refresh_catalog()
         request.app.state.gateway_state.events.add("models.catalog.refreshed", result)
         return {"ok": True, **result}
+
+    @router.post("/api/models/thinking")
+    async def set_thinking(payload: ThinkingSelectRequest, request: Request):
+        state = request.app.state.gateway_state
+        try:
+            result = state.model_selector.set_thinking_level(
+                payload.level,
+                model_ref=payload.model_ref,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        state.events.add(
+            "model.thinking.changed",
+            {
+                "model_ref": payload.model_ref,
+                "level": payload.level,
+                "mode": result["mode"],
+            },
+        )
+        return result
 
     @router.get("/api/models/preferences")
     async def preferences(request: Request):

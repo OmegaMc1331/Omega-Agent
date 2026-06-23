@@ -266,6 +266,7 @@ class BaseProvider:
         user_input: str,
         *,
         tools: list[dict] | None = None,
+        thinking: dict[str, Any] | None = None,
     ) -> CompletionResult:
         raise ProviderError(f"Provider {self.provider_id} ne supporte pas encore chat().")
 
@@ -276,13 +277,17 @@ class BaseProvider:
         user_input: str,
         *,
         tools: list[dict] | None = None,
+        thinking: dict[str, Any] | None = None,
     ) -> AsyncIterator[str]:
+        chat_kwargs: dict[str, Any] = {"tools": tools}
+        if thinking:
+            chat_kwargs["thinking"] = thinking
         result = await asyncio.to_thread(
             self.chat,
             model_ref,
             history,
             user_input,
-            tools=tools,
+            **chat_kwargs,
         )
         yield result.content
 

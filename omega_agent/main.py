@@ -212,6 +212,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         models_subparsers.add_parser("providers")
         models_subparsers.add_parser("status")
         models_subparsers.add_parser("current")
+        models_show = models_subparsers.add_parser("show")
+        models_show.add_argument("model_ref")
         models_refresh = models_subparsers.add_parser("refresh")
         models_refresh.add_argument("--provider", default=None)
         models_subparsers.add_parser("auth-status")
@@ -255,6 +257,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         providers_test = providers_subparsers.add_parser("test")
         providers_test.add_argument("provider")
         providers_subparsers.add_parser("doctor")
+    thinking_parser = subparsers.add_parser("thinking")
+    thinking_subparsers = thinking_parser.add_subparsers(dest="thinking_command")
+    thinking_subparsers.add_parser("current")
+    thinking_levels = thinking_subparsers.add_parser("levels")
+    thinking_levels.add_argument("--model", dest="model_ref", default=None)
+    thinking_use = thinking_subparsers.add_parser("use")
+    thinking_use.add_argument("level")
+    thinking_use.add_argument("--model", dest="model_ref", default=None)
+    thinking_off = thinking_subparsers.add_parser("off")
+    thinking_off.add_argument("--model", dest="model_ref", default=None)
+    thinking_auto = thinking_subparsers.add_parser("auto")
+    thinking_auto.add_argument("--model", dest="model_ref", default=None)
+    thinking_subparsers.add_parser("doctor")
     jobs_parser = subparsers.add_parser("jobs")
     jobs_subparsers = jobs_parser.add_subparsers(dest="jobs_command")
     jobs_subparsers.add_parser("list")
@@ -584,6 +599,7 @@ def _dispatch_cli_command(args: argparse.Namespace) -> int:
         "model": models_command,
         "providers": providers_command,
         "provider": providers_command,
+        "thinking": thinking_command,
         "jobs": jobs_command,
         "runs": runs_command,
         "rollback": rollback_command,
@@ -1076,8 +1092,35 @@ def models_command(args: argparse.Namespace) -> int:
 
     _load_legacy_dotenv_if_needed()
     config = OmegaConfig.from_env()
-    selector = ModelSelector(config)
     command = args.models_command
+    if command == "show":
+        from .providers.registry import ProviderRegistry
+        from .providers.thinking import matrix_for_config, thinking_status
+
+        model_ref = args.model_ref
+        provider_id = model_ref.split("/", 1)[0]
+        if ProviderRegistry(config).get(provider_id) is None:
+            console.print(f"[red]Provider introuvable : {provider_id}[/red]")
+            return 1
+        thinking = thinking_status(matrix_for_config(config), model_ref)
+        console.print(f"provider: {provider_id}")
+        console.print(f"model: {model_ref}")
+        console.print(f"thinking supported: {'yes' if thinking['supported'] else 'no'}")
+        console.print(
+            "supported thinking levels: "
+            + (", ".join(thinking["levels"]) if thinking["levels"] else "none")
+        )
+        console.print(f"current thinking level: {thinking['current_level']}")
+        console.print(f"API mode: {thinking['mode']}")
+        if thinking.get("reason"):
+            console.print(f"reason: {thinking['reason']}", markup=False)
+        for limitation in thinking.get("limitations", []):
+            console.print(f"limitation: {limitation}", markup=False)
+        if not thinking.get("valid", True):
+            console.print(f"[red]configuration error: {thinking['error']}[/red]")
+            return 1
+        return 0
+    selector = ModelSelector(config)
     if command == "list":
         models = selector.catalog_api()
         provider_filter = getattr(args, "provider", None)
@@ -1108,6 +1151,11 @@ def models_command(args: argparse.Namespace) -> int:
         console.print(f"Default provider: {current['default_provider']}")
         console.print(f"Default model: {current['primary_model_ref']}")
         console.print(f"Source: {current['source_scope']}")
+        if current.get("thinking"):
+            console.print(
+                f"Thinking: {current['thinking']['current_level']} "
+                f"({current['thinking']['mode']})"
+            )
         if current.get("fallback_model_ref"):
             console.print(f"Fallback: {current['fallback_model_ref']}")
         return 0
@@ -1164,6 +1212,110 @@ def models_command(args: argparse.Namespace) -> int:
     console.print(
         "Commandes: omega models list|current|use <provider/model>|"
         "test [provider/model]|refresh"
+    )
+    return 2
+
+
+def thinking_command(args: argparse.Namespace) -> int:
+    from .config import OmegaConfig
+    from .config_store import load_config
+    from .providers.thinking import (
+        OMEGA_THINKING_LEVELS,
+        ThinkingConfigurationError,
+        ThinkingMatrix,
+        save_thinking_level,
+        thinking_status,
+    )
+
+    _load_legacy_dotenv_if_needed()
+    config = OmegaConfig.from_env()
+    current_model = config.default_model_ref
+    data = load_config(config.config_path)
+    matrix = ThinkingMatrix(data)
+    command = args.thinking_command
+
+    if command == "current":
+        thinking = thinking_status(matrix, current_model)
+        console.print(f"Model: {current_model}")
+        console.print(f"Configured level: {thinking['configured_level']}")
+        console.print(f"Effective level: {thinking['current_level']}")
+        console.print(f"Source: {thinking['source']}")
+        console.print(f"API mode: {thinking['mode']}")
+        if not thinking.get("valid", True):
+            console.print(f"[red]{thinking['error']}[/red]")
+            return 1
+        return 0
+
+    if command == "levels":
+        model_ref = getattr(args, "model_ref", None) or current_model
+        thinking = thinking_status(matrix, model_ref)
+        console.print(f"Model: {model_ref}")
+        console.print(
+            "Supported levels: "
+            + (", ".join(thinking["levels"]) if thinking["levels"] else "none")
+        )
+        console.print(f"API mode: {thinking['mode']}")
+        if thinking.get("reason"):
+            console.print(thinking["reason"], markup=False)
+        return 0
+
+    if command in {"use", "off", "auto"}:
+        level = args.level if command == "use" else command
+        model_ref = getattr(args, "model_ref", None)
+        try:
+            result = save_thinking_level(config, level, model_ref=model_ref)
+        except (ThinkingConfigurationError, ValueError) as exc:
+            console.print(str(exc), style="red", markup=False)
+            return 1
+        scope = model_ref or "global"
+        console.print(f"Thinking level ({scope}): {level}")
+        console.print(f"Effective level: {result['current_level']}")
+        return 0
+
+    if command == "doctor":
+        failures: list[str] = []
+        targets = {current_model}
+        per_model = matrix.settings.get("per_model", {})
+        if isinstance(per_model, dict):
+            targets.update(str(model_ref) for model_ref in per_model)
+        for model_ref in sorted(targets):
+            try:
+                resolved = matrix.resolve(model_ref)
+            except ThinkingConfigurationError as exc:
+                failures.append(f"{model_ref}: {exc}")
+                continue
+            minimum = resolved.profile.minimum_max_tokens.get(
+                resolved.effective_level
+            )
+            if minimum:
+                provider_items = data.get("providers", {}).get("items", {})
+                provider_settings = (
+                    provider_items.get(resolved.profile.provider, {})
+                    if isinstance(provider_items, dict)
+                    else {}
+                )
+                max_tokens = int(provider_settings.get("max_tokens") or 4096)
+                if max_tokens < minimum:
+                    failures.append(
+                        f"{model_ref}: max_tokens={max_tokens}, minimum requis={minimum} "
+                        f"pour {resolved.effective_level}."
+                    )
+            console.print(
+                f"{model_ref}: {resolved.effective_level} ({resolved.profile.mode})"
+            )
+        if failures:
+            for failure in failures:
+                console.print(f"FAIL {failure}", style="red", markup=False)
+            return 1
+        console.print(
+            "Thinking configuration: PASS. Aucun raisonnement privé n'est exposé.",
+            markup=False,
+        )
+        return 0
+
+    console.print(
+        "Commandes: omega thinking current|levels|use <level>|off|auto|doctor. "
+        f"Niveaux Omega: {', '.join(OMEGA_THINKING_LEVELS)}"
     )
     return 2
 

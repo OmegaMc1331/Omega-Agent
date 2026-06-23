@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from typing import Any
 
 from omega_agent.codex_backend import CODEX_LOGIN_HINT, codex_login_status_cached, run_codex_turn
 from omega_agent.providers.base import (
@@ -55,6 +56,7 @@ class CodexProvider(BaseProvider):
         user_input: str,
         *,
         tools: list[dict] | None = None,
+        thinking: dict[str, Any] | None = None,
     ) -> CompletionResult:
         model = model_name_from_ref(self.provider_id, model_ref)
         from omega_agent.runtime import agent as runtime_agent

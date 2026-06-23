@@ -10,6 +10,11 @@ from omega_agent.config import OmegaConfig
 from omega_agent.config_store import load_config, save_config, set_config_value
 from omega_agent.providers.base import AuthStatus, ModelInfo, ProviderInfo
 from omega_agent.providers.registry import ProviderRegistry
+from omega_agent.providers.thinking import (
+    matrix_for_config,
+    save_thinking_level,
+    thinking_status,
+)
 from omega_agent.runtime.storage import connect_runtime_db
 from omega_agent.security.redaction import redact
 
@@ -163,6 +168,7 @@ class ModelSelector:
         for row in rows:
             capabilities = json.loads(row["capabilities_json"] or "{}")
             metadata = json.loads(row["metadata_json"] or "{}")
+            thinking = self.thinking_api(str(row["model_ref"]))
             result.append(
                 redact(
                     {
@@ -182,6 +188,7 @@ class ModelSelector:
                         "available": bool(row["available"]),
                         "metadata": metadata,
                         "metadata_json": row["metadata_json"],
+                        "thinking": thinking,
                     }
                 )
             )
@@ -290,7 +297,15 @@ class ModelSelector:
             agent_profile_id=agent_profile_id,
         ).as_api()
         payload["default_provider"] = self._default_provider()
+        payload["thinking"] = self.thinking_api(str(payload["primary_model_ref"]))
         return payload
+
+    def thinking_api(self, model_ref: str) -> dict:
+        return thinking_status(matrix_for_config(self.config), model_ref)
+
+    def set_thinking_level(self, level: str, model_ref: str | None = None) -> dict:
+        target_model = model_ref or self.resolve_model().primary_model_ref
+        return save_thinking_level(self.config, level, model_ref=target_model if model_ref else None)
 
     def status_api(self, force: bool = False) -> list[dict]:
         now = time.monotonic()

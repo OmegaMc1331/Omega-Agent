@@ -66,6 +66,12 @@ def default_config() -> dict[str, Any]:
             "fallback": None,
             "recent": [],
         },
+        "thinking": {
+            "default": "auto",
+            "per_model": {},
+            "profiles": {},
+            "allow_unsupported_fallback": False,
+        },
         "providers": {
             "default": "codex",
             "items": provider_items,
